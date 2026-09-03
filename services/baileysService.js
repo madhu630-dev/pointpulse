@@ -106,6 +106,8 @@ const startWhatsApp = async () => {
 
 const sentBotMessageIds = new Set();
 
+        const groupSubjectCache = new Map();
+
         // Listen for incoming WhatsApp messages
         sock.ev.on('messages.upsert', async (m) => {
             if (m.type !== 'notify') return;
@@ -127,6 +129,45 @@ const sentBotMessageIds = new Set();
                     continue;
                 }
 
+                const selfPhone = sock.user?.id ? sock.user.id.split('@')[0].split(':')[0] : null;
+
+                // 1. FOR 1-ON-1 CHATS (@s.whatsapp.net):
+                // If sent by me, only process if it's sent to MYSELF (Message to Self / Note to Self)
+                if (jid.endsWith('@s.whatsapp.net')) {
+                    const chatPhone = jid.split('@')[0].split(':')[0];
+                    if (msg.key.fromMe && selfPhone && chatPhone !== selfPhone) {
+                        // User is chatting with another person in private — IGNORE!
+                        continue;
+                    }
+                }
+
+                // 2. FOR GROUPS (@g.us):
+                // Strictly only allow the dedicated bot group (named "Chat", "PointPulse", "Bot", etc.)
+                if (jid.endsWith('@g.us')) {
+                    let groupSubject = groupSubjectCache.get(jid);
+                    if (!groupSubject) {
+                        try {
+                            const meta = await sock.groupMetadata(jid);
+                            groupSubject = meta?.subject || '';
+                            groupSubjectCache.set(jid, groupSubject);
+                        } catch (e) {
+                            groupSubject = '';
+                        }
+                    }
+
+                    const normalizedSubject = (groupSubject || '').toLowerCase().trim();
+                    const isAllowedGroup = normalizedSubject === 'chat' || 
+                                           normalizedSubject.includes('pointpulse') || 
+                                           normalizedSubject.includes('point pulse') || 
+                                           normalizedSubject.includes('pulse') ||
+                                           normalizedSubject.includes('bot');
+
+                    if (!isAllowedGroup) {
+                        // Strictly ignore all other groups (family, friends, general groups)
+                        continue;
+                    }
+                }
+
                 let messageObj = msg.message;
                 if (messageObj?.ephemeralMessage) messageObj = messageObj.ephemeralMessage.message;
                 if (messageObj?.viewOnceMessage) messageObj = messageObj.viewOnceMessage.message;
@@ -139,8 +180,8 @@ const sentBotMessageIds = new Set();
                 if (!text) continue;
 
                 // Extract sender phone number (strip :0 / :1 device tags)
-                let rawPhone = msg.key.fromMe && sock.user?.id 
-                    ? sock.user.id.split('@')[0].split(':')[0] 
+                let rawPhone = msg.key.fromMe && selfPhone 
+                    ? selfPhone 
                     : (msg.key.participant || jid).split('@')[0].split(':')[0];
 
                 // If sent from the connected account itself:
