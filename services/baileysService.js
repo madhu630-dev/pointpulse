@@ -129,43 +129,32 @@ const sentBotMessageIds = new Set();
                     continue;
                 }
 
-                const selfPhone = sock.user?.id ? sock.user.id.split('@')[0].split(':')[0] : null;
+                // STRICT LOCK: Only process messages inside the dedicated group (@g.us)
+                // Completely IGNORE all 1-on-1 personal/private chats
+                if (!jid.endsWith('@g.us')) {
+                    continue;
+                }
 
-                // 1. FOR 1-ON-1 CHATS (@s.whatsapp.net):
-                // If sent by me, only process if it's sent to MYSELF (Message to Self / Note to Self)
-                if (jid.endsWith('@s.whatsapp.net')) {
-                    const chatPhone = jid.split('@')[0].split(':')[0];
-                    if (msg.key.fromMe && selfPhone && chatPhone !== selfPhone) {
-                        // User is chatting with another person in private — IGNORE!
-                        continue;
+                // Strictly only allow the dedicated bot group (named "Chat" or "PointPulse")
+                let groupSubject = groupSubjectCache.get(jid);
+                if (!groupSubject) {
+                    try {
+                        const meta = await sock.groupMetadata(jid);
+                        groupSubject = meta?.subject || '';
+                        groupSubjectCache.set(jid, groupSubject);
+                    } catch (e) {
+                        groupSubject = '';
                     }
                 }
 
-                // 2. FOR GROUPS (@g.us):
-                // Strictly only allow the dedicated bot group (named "Chat", "PointPulse", "Bot", etc.)
-                if (jid.endsWith('@g.us')) {
-                    let groupSubject = groupSubjectCache.get(jid);
-                    if (!groupSubject) {
-                        try {
-                            const meta = await sock.groupMetadata(jid);
-                            groupSubject = meta?.subject || '';
-                            groupSubjectCache.set(jid, groupSubject);
-                        } catch (e) {
-                            groupSubject = '';
-                        }
-                    }
+                const normalizedSubject = (groupSubject || '').toLowerCase().trim();
+                const isAllowedGroup = normalizedSubject === 'chat' || 
+                                       normalizedSubject.includes('pointpulse') || 
+                                       normalizedSubject.includes('point pulse');
 
-                    const normalizedSubject = (groupSubject || '').toLowerCase().trim();
-                    const isAllowedGroup = normalizedSubject === 'chat' || 
-                                           normalizedSubject.includes('pointpulse') || 
-                                           normalizedSubject.includes('point pulse') || 
-                                           normalizedSubject.includes('pulse') ||
-                                           normalizedSubject.includes('bot');
-
-                    if (!isAllowedGroup) {
-                        // Strictly ignore all other groups (family, friends, general groups)
-                        continue;
-                    }
+                if (!isAllowedGroup) {
+                    // Strictly ignore all other WhatsApp groups
+                    continue;
                 }
 
                 let messageObj = msg.message;
