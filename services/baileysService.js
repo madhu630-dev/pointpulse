@@ -169,6 +169,7 @@ const sentBotMessageIds = new Set();
                 if (!text) continue;
 
                 // Extract sender phone number (strip :0 / :1 device tags)
+                const selfPhone = sock.user?.id ? sock.user.id.split('@')[0].split(':')[0] : null;
                 let rawPhone = msg.key.fromMe && selfPhone 
                     ? selfPhone 
                     : (msg.key.participant || jid).split('@')[0].split(':')[0];
