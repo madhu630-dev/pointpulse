@@ -3,961 +3,1081 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PointPulse – Edge Rewards Tracker</title>
+    <title>PointPulse – Account Management & Rewards Intelligence Platform</title>
     <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body class="dark-theme">
 
-    <!-- Login/Register View -->
-    <div id="login-view" class="login-container">
-        <div class="login-box">
-            <div class="logo login-logo">
-                <i class="fa-brands fa-edge"></i> PointPulse
+    <!-- 1. AUTHENTICATION VIEW (Google OAuth 2.0) -->
+    <div id="view-auth" class="auth-container">
+        <div class="auth-card">
+            <div class="auth-logo">
+                <i class="fa-solid fa-chart-line" style="color: var(--primary-color);"></i> PointPulse
             </div>
-            <p class="tagline">Manage rewards & track performance effortlessly</p>
-            <p id="auth-subtitle" class="text-secondary" style="margin-bottom: 1.5rem;">Sign in to your account</p>
-            
-            <div id="auth-error-box" class="hidden" style="background: rgba(239, 68, 68, 0.1); color: var(--danger-color); padding: 0.8rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid rgba(239, 68, 68, 0.2); font-size: 0.9rem;">
-                <i class="fa-solid fa-circle-exclamation"></i> <span id="auth-error-msg">Incorrect credentials</span>
+            <p class="text-secondary" style="margin-bottom: 2rem; font-size: 0.95rem;">
+                Enterprise Multi-User Rewards & Performance Platform
+            </p>
+
+            <div id="auth-error-banner" class="hidden" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: var(--danger-color); padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.88rem; text-align: left;">
+                <i class="fa-solid fa-circle-exclamation"></i> <span id="auth-error-text">Authentication Error</span>
             </div>
 
-            <div class="input-group">
-                <i class="fa-solid fa-envelope"></i>
-                <input type="email" id="login-email" placeholder="Email address">
-            </div>
-            
-            <div class="input-group">
-                <i class="fa-solid fa-lock"></i>
-                <input type="password" id="login-password" placeholder="Password">
-                <i class="fa-solid fa-eye" id="toggle-password" style="left: auto; right: 12px; cursor: pointer; pointer-events: auto;" title="Show/Hide Password"></i>
-            </div>
-            
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; font-size: 0.85rem;">
-                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary); cursor: pointer;">
-                    <input type="checkbox" id="remember-me"> Remember me
-                </label>
-                <a href="#" class="text-secondary" style="text-decoration: none;">Forgot Password?</a>
+            <!-- Official Google Sign-In Area -->
+            <div style="margin-bottom: 1.75rem;">
+                <div id="g_id_onload"
+                     data-client_id=""
+                     data-context="signin"
+                     data-ux_mode="popup"
+                     data-callback="handleGoogleCredentialResponse"
+                     data-auto_prompt="false">
+                </div>
+                <div id="google-btn-container" style="display: flex; justify-content: center; min-height: 44px;">
+                    <!-- Rendered by Google or custom fallback button -->
+                    <button id="custom-google-btn" class="google-signin-btn" onclick="initiateGoogleLogin()">
+                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+                        <span>Continue with Google</span>
+                    </button>
+                </div>
             </div>
 
-            <button id="login-btn" class="btn primary-btn w-100">
-                <span id="login-btn-text">Sign In</span>
-                <i class="fa-solid fa-circle-notch fa-spin hidden" id="login-spinner"></i>
-            </button>
-            <button id="register-btn" class="btn secondary-btn w-100 hidden" style="margin-top: 10px;">
-                <span id="register-btn-text">Create Account</span>
-                <i class="fa-solid fa-circle-notch fa-spin hidden" id="register-spinner"></i>
-            </button>
-            
-            <div style="margin-top: 1.5rem;">
-                <a href="#" id="toggle-auth" class="text-secondary" style="font-size: 0.9rem; text-decoration: none; font-weight: 500;">Need an account? <span style="color: var(--primary-color);">Register</span></a>
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; text-align: left;">
+                <i class="fa-solid fa-shield-halved" style="color: var(--success-color); margin-right: 4px;"></i>
+                <strong>Genuine Google Authentication Only</strong><br>
+                PointPulse validates verified Google identity tokens directly. We never request or store your Google password.
+            </div>
+
+            <!-- Quick Sandbox Identity Switcher for Verification & Admin Provisioning -->
+            <div style="border-top: 1px solid var(--border-color); padding-top: 1.25rem; text-align: left;">
+                <span class="text-muted" style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">
+                    <i class="fa-solid fa-key" style="color: var(--secondary-color);"></i> Provisioning & Sandbox Identities:
+                </span>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button class="btn secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.78rem;" onclick="sandboxLogin('001.workme@gmail.com', 'PointPulse Administrator')">
+                        <i class="fa-solid fa-user-shield" style="color: var(--primary-color);"></i> Admin (001.workme@gmail.com)
+                    </button>
+                    <button class="btn secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.78rem;" onclick="sandboxLogin('user.operator@gmail.com', 'Sarah Operator')">
+                        <i class="fa-solid fa-user"></i> Test Operator
+                    </button>
+                    <button class="btn secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.78rem;" onclick="sandboxLogin('alex.farmer@gmail.com', 'Alex Farmer')">
+                        <i class="fa-solid fa-user-plus"></i> New Registrant
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Dashboard App Layout -->
-    <div id="app-layout" class="app-layout hidden">
-        <!-- Sidebar Navigation -->
+    <!-- 2. REGISTRATION FORM SCREEN (After Google Sign-In) -->
+    <div id="view-registration" class="auth-container hidden">
+        <div class="auth-card" style="max-width: 580px; text-align: left;">
+            <div class="auth-logo" style="font-size: 1.8rem; margin-bottom: 0.25rem;">
+                <i class="fa-solid fa-chart-line"></i> PointPulse Registration
+            </div>
+            <p class="text-secondary" style="font-size: 0.9rem; margin-bottom: 1.5rem;">
+                Complete your registration profile. All applications are reviewed by the administrator before dashboard access is granted.
+            </p>
+
+            <form id="registration-form" onsubmit="submitRegistrationForm(event)">
+                <div style="display: flex; align-items: center; gap: 1rem; background: var(--bg-color); padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 1.5rem;">
+                    <img id="reg-avatar" src="" alt="Avatar" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover;">
+                    <div>
+                        <div id="reg-name-display" style="font-weight: 700; font-size: 1rem;"></div>
+                        <div id="reg-email-display" class="text-secondary" style="font-size: 0.85rem;"></div>
+                        <span class="badge badge-active" style="margin-top: 4px; font-size: 0.72rem;"><i class="fa-solid fa-check-circle"></i> Google Email Verified</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Preferred Display Name *</label>
+                    <input type="text" id="reg-display-name" class="form-input" required placeholder="e.g. Alex (Morning Shift)">
+                </div>
+
+                <div class="form-group">
+                    <label>Contact Phone Number (Optional)</label>
+                    <input type="text" id="reg-phone" class="form-input" placeholder="+1 555-0199 or +91 9876543210">
+                </div>
+
+                <div class="form-group">
+                    <label>Registration Purpose *</label>
+                    <select id="reg-purpose" class="form-input" required>
+                        <option value="account_operator">Account & Rewards Operator</option>
+                        <option value="data_entry">Points Management & Data Entry</option>
+                        <option value="redemption_team">Redemption & Voucher Operations</option>
+                        <option value="auditor">Auditor / Viewer</option>
+                        <option value="other">Other Business Purpose</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Account Management Description *</label>
+                    <textarea id="reg-description" rows="2" class="form-input" required placeholder="Describe which profiles or batch of accounts you will be managing..."></textarea>
+                </div>
+
+                <div style="background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+                    <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer; font-size: 0.84rem; line-height: 1.5; color: var(--text-primary);">
+                        <input type="checkbox" id="reg-terms-check" required style="margin-top: 3px; width: 18px; height: 18px; accent-color: var(--primary-color);">
+                        <span>
+                            <strong>Mandatory User Acknowledgement:</strong> I confirm that I am responsible for the accuracy of information I submit, will only manage accounts I am authorized for, understand dashboard access requires administrator approval, and agree to the platform's data privacy and acceptable-use policies.
+                        </span>
+                    </label>
+                </div>
+
+                <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                    <button type="button" class="btn secondary-btn" onclick="logout()">Cancel</button>
+                    <button type="submit" class="btn primary-btn"><i class="fa-solid fa-paper-plane"></i> Submit Application</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 3. PENDING APPROVAL SCREEN (Strictly NO private data) -->
+    <div id="view-pending" class="pending-screen hidden">
+        <div class="pending-card">
+            <img id="pending-avatar" src="" alt="Avatar" class="pending-avatar">
+            <div class="auth-logo" style="font-size: 1.8rem; margin-bottom: 0.5rem;">
+                <i class="fa-solid fa-chart-line"></i> PointPulse
+            </div>
+            <h2 id="pending-greeting" style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.5rem;">Welcome, User</h2>
+            <p id="pending-email-display" class="text-secondary" style="font-size: 0.95rem; margin-bottom: 1.5rem;"></p>
+
+            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
+                <div style="display: inline-flex; align-items: center; gap: 0.5rem; color: var(--warning-color); font-weight: 700; font-size: 1rem; margin-bottom: 0.5rem;">
+                    <i class="fa-solid fa-hourglass-half fa-spin"></i> Application Status: Pending Approval
+                </div>
+                <p class="text-secondary" style="font-size: 0.88rem; line-height: 1.5;">
+                    Your registration application has been submitted to the administrator for review. To protect data privacy, dashboard information remains restricted until your application is approved.
+                </p>
+                <div id="pending-submitted-date" class="text-muted" style="font-size: 0.8rem; margin-top: 0.75rem;"></div>
+            </div>
+
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button class="btn secondary-btn" onclick="openContactAdminModal()"><i class="fa-solid fa-envelope"></i> Contact Admin</button>
+                <button class="btn danger-btn" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. SUSPENDED SCREEN -->
+    <div id="view-suspended" class="pending-screen hidden">
+        <div class="pending-card" style="border-color: rgba(239, 68, 68, 0.4);">
+            <div style="font-size: 3.5rem; color: var(--danger-color); margin-bottom: 1rem;">
+                <i class="fa-solid fa-circle-ban"></i>
+            </div>
+            <h2 style="font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem;">Account Suspended</h2>
+            <p class="text-secondary" style="font-size: 0.92rem; line-height: 1.5; margin-bottom: 2rem;">
+                Your PointPulse dashboard access has been suspended by the administrator. All private records and operations are currently locked.
+            </p>
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button class="btn secondary-btn" onclick="openContactAdminModal()"><i class="fa-solid fa-envelope"></i> Contact Admin</button>
+                <button class="btn danger-btn" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. MAIN DASHBOARD APP LAYOUT (ADMIN & USER) -->
+    <div id="view-dashboard" class="dashboard-layout hidden">
+        
+        <!-- SIDEBAR -->
         <aside class="sidebar">
-            <div class="logo sidebar-logo">
-                <i class="fa-brands fa-edge"></i> PointPulse
+            <div class="sidebar-logo">
+                <i class="fa-solid fa-chart-line" style="color: var(--primary-color);"></i>
+                <span>PointPulse</span>
             </div>
-            <div class="user-info">
-                <span id="user-display" class="badge badge-active"></span>
+
+            <!-- ADMIN NAVIGATION ITEMS -->
+            <div id="admin-nav-container" class="hidden">
+                <div class="sidebar-nav-group">
+                    <div class="sidebar-group-title">Main Control</div>
+                    <button class="sidebar-nav-btn active" data-page="admin-overview">
+                        <i class="fa-solid fa-chart-pie"></i> <span>Overview & KPIs</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="admin-users">
+                        <i class="fa-solid fa-users"></i> <span>User Management</span>
+                        <span id="badge-pending-users" class="nav-badge hidden">0</span>
+                    </button>
+                </div>
+
+                <div class="sidebar-nav-group">
+                    <div class="sidebar-group-title">Accounts & Points</div>
+                    <button class="sidebar-nav-btn" data-page="admin-all-accounts">
+                        <i class="fa-solid fa-list-check"></i> <span>All Accounts</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="admin-classification">
+                        <i class="fa-solid fa-arrows-split-up-and-left"></i> <span>Old / New Board</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="admin-points-perms">
+                        <i class="fa-solid fa-bolt"></i> <span>Points & Access</span>
+                    </button>
+                </div>
+
+                <div class="sidebar-nav-group">
+                    <div class="sidebar-group-title">Rewards & Eligibility</div>
+                    <button class="sidebar-nav-btn" data-page="admin-catalog">
+                        <i class="fa-solid fa-gift"></i> <span>Reward Catalogue</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="admin-matching">
+                        <i class="fa-solid fa-crosshairs"></i> <span>Account Matching</span>
+                    </button>
+                </div>
+
+                <div class="sidebar-nav-group">
+                    <div class="sidebar-group-title">Governance & Operations</div>
+                    <button class="sidebar-nav-btn" data-page="admin-notifications">
+                        <i class="fa-solid fa-bell"></i> <span>Notification Center</span>
+                        <span id="badge-admin-notifs" class="nav-badge hidden">0</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="admin-forms">
+                        <i class="fa-solid fa-clipboard-check"></i> <span>Monthly Reviews</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="admin-downloads">
+                        <i class="fa-solid fa-download"></i> <span>Download Center</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="admin-audit">
+                        <i class="fa-solid fa-file-shield"></i> <span>Audit Logs</span>
+                    </button>
+                </div>
             </div>
-            <nav class="sidebar-nav">
-                <button class="nav-item active" data-target="page-overview"><i class="fa-solid fa-chart-pie"></i> Overview</button>
-                <button class="nav-item" data-target="page-active"><i class="fa-solid fa-list-check"></i> Active Accounts</button>
-                <button class="nav-item" data-target="page-banned"><i class="fa-solid fa-ban"></i> Banned Accounts</button>
-                <button class="nav-item" data-target="page-updations"><i class="fa-solid fa-file-excel"></i> Bulk Updations</button>
-                <button class="nav-item" data-target="page-inventory"><i class="fa-solid fa-boxes-stacked"></i> Inventory</button>
-                <button class="nav-item" data-target="page-downloads"><i class="fa-solid fa-download"></i> Download</button>
-                <button class="nav-item" data-target="page-whatsapp"><i class="fa-brands fa-whatsapp" style="color: #25D366;"></i> WhatsApp Access</button>
-            </nav>
-            <div class="sidebar-footer">
-                <button id="theme-toggle" class="btn secondary-btn w-100" style="margin-bottom: 0.5rem;"><i class="fa-solid fa-sun"></i> Theme</button>
-                <button id="logout-btn" class="btn secondary-btn w-100" style="color: var(--danger-color); border-color: var(--danger-color);"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+
+            <!-- USER NAVIGATION ITEMS -->
+            <div id="user-nav-container" class="hidden">
+                <div class="sidebar-nav-group">
+                    <div class="sidebar-group-title">My Dashboard</div>
+                    <button class="sidebar-nav-btn active" data-page="user-overview">
+                        <i class="fa-solid fa-gauge-high"></i> <span>My Overview</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="user-active-accounts">
+                        <i class="fa-solid fa-list-check"></i> <span>Active Accounts</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="user-banned-accounts">
+                        <i class="fa-solid fa-ban"></i> <span>Banned Accounts</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="user-classified-accounts">
+                        <i class="fa-solid fa-layer-group"></i> <span>Old & New Accounts</span>
+                    </button>
+                </div>
+
+                <div class="sidebar-nav-group">
+                    <div class="sidebar-group-title">Rewards & Requests</div>
+                    <button class="sidebar-nav-btn" data-page="user-rewards">
+                        <i class="fa-solid fa-gift"></i> <span>Available Rewards</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="user-requests">
+                        <i class="fa-solid fa-paper-plane"></i> <span>Request Center</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="user-downloads">
+                        <i class="fa-solid fa-download"></i> <span>Download Reports</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- SIDEBAR FOOTER -->
+            <div style="margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.5rem;">
+                    <img id="nav-user-avatar" src="" alt="Avatar" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">
+                    <div style="overflow: hidden;">
+                        <div id="nav-user-name" style="font-size: 0.85rem; font-weight: 700; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;"></div>
+                        <div id="nav-user-role" class="badge badge-primary" style="font-size: 0.68rem; padding: 0.15rem 0.45rem;"></div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn secondary-btn" style="flex: 1; padding: 0.45rem;" onclick="toggleTheme()"><i class="fa-solid fa-sun"></i> Theme</button>
+                    <button class="btn danger-btn" style="padding: 0.45rem 0.75rem;" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i></button>
+                </div>
             </div>
         </aside>
 
-        <!-- Main Content Area -->
-        <main class="main-content">
-            
-            <!-- Page: Overview -->
-            <div id="page-overview" class="page-view active">
-                <header class="page-header">
-                    <h2>Dashboard Overview</h2>
-                </header>
+        <!-- MAIN CONTENT WRAPPER -->
+        <div class="content-wrapper">
+            <!-- TOP NAVBAR -->
+            <header class="top-navbar">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <h3 id="current-view-title" style="font-size: 1.25rem; font-weight: 700;">Dashboard</h3>
+                    <span id="access-window-pill" class="badge badge-active hidden"><i class="fa-solid fa-clock"></i> Points Window Active</span>
+                </div>
 
-                <!-- Account Stats Section -->
-                <section class="dashboard-section" style="margin-bottom: 2rem;">
-                    <div class="redeem-cards" id="overview-stats-container">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <button class="icon-btn" onclick="openNotificationDrawer()" title="Notifications" style="position: relative;">
+                        <i class="fa-solid fa-bell"></i>
+                        <span id="top-bell-badge" class="nav-badge hidden" style="position: absolute; top: 0; right: 0;">0</span>
+                    </button>
+                    <span id="top-user-pill" class="badge badge-active"></span>
+                </div>
+            </header>
+
+            <!-- MAIN DYNAMIC VIEWS CONTAINER -->
+            <main class="main-view-container">
+
+                <!-- VIEW: ADMIN OVERVIEW -->
+                <div id="page-admin-overview" class="page-pane">
+                    <div class="kpi-grid" id="admin-kpi-container">
                         <!-- Populated by JS -->
                     </div>
-                </section>
 
-                <!-- Ready to Redeem Section -->
-                <section class="dashboard-section">
-                    <div class="section-header">
-                        <h3><i class="fa-solid fa-gift"></i> Ready to Redeem</h3>
-                    </div>
-                    <div class="redeem-cards" id="ready-redeem-container">
-                        <!-- Populated by JS -->
-                    </div>
-                </section>
-
-                <!-- Points Categorization -->
-                <section class="dashboard-section">
-                    <div class="section-header">
-                        <h3><i class="fa-solid fa-layer-group"></i> Points Overview</h3>
-                    </div>
-                    <div class="bucket-grid" id="buckets-container">
-                        <!-- Populated by JS -->
-                    </div>
-                </section>
-            </div>
-
-            <!-- Page: Active Accounts -->
-            <div id="page-active" class="page-view hidden">
-                <header class="page-header">
-                    <div class="header-row">
-                        <h2>Active Accounts</h2>
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                            <select id="filter-sort" class="form-input" style="width: auto; padding: 0.5rem;">
-                                <option value="profile-asc">Sort: Profile (Low to High)</option>
-                                <option value="profile-desc">Sort: Profile (High to Low)</option>
-                                <option value="points-desc">Sort: Points (High to Low)</option>
-                                <option value="points-asc">Sort: Points (Low to High)</option>
-                            </select>
-                            <select id="filter-points" class="form-input" style="width: auto; padding: 0.5rem;">
-                                <option value="all">All Points</option>
-                                <option value="0-5000">0 - 5K</option>
-                                <option value="5000-10000">5K - 10K</option>
-                                <option value="10000+">10K+</option>
-                            </select>
-                            <select id="filter-eligibility" class="form-input" style="width: auto; padding: 0.5rem;">
-                                <option value="all">Any Reward</option>
-                                <option value="5000">Ready: Overwatch (5K)</option>
-                                <option value="6500">Ready: Roblox (6.5K)</option>
-                                <option value="10000">Ready: Plasma (10K)</option>
-                            </select>
-                            <button id="open-share-report-btn" class="btn primary-btn" style="padding: 0.5rem;"><i class="fa-solid fa-share-nodes"></i> Share Report</button>
-                            <button id="open-create-modal-btn" class="btn secondary-btn" style="padding: 0.5rem; border-color: var(--primary-color); color: var(--primary-color);"><i class="fa-solid fa-user-plus"></i> Add Profile</button>
-                            <div class="search-bar" style="margin-top: 0; min-width: 250px;">
-                                <i class="fa-solid fa-search"></i>
-                                <input type="text" id="search-active" placeholder="Search by email...">
-                            </div>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                        <div class="table-card" style="padding: 1.5rem;">
+                            <h4 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 1rem;"><i class="fa-solid fa-chart-area" style="color: var(--primary-color);"></i> Accounts Points Distribution</h4>
+                            <canvas id="chart-admin-points" style="max-height: 280px;"></canvas>
+                        </div>
+                        <div class="table-card" style="padding: 1.5rem;">
+                            <h4 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 1rem;"><i class="fa-solid fa-pie-chart" style="color: var(--secondary-color);"></i> Account Statuses</h4>
+                            <canvas id="chart-admin-status" style="max-height: 280px;"></canvas>
                         </div>
                     </div>
-                </header>
-                <section class="dashboard-section list-section">
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Prof No.</th>
-                                    <th>Email</th>
-                                    <th>Server</th>
-                                    <th>Current Points</th>
-                                    <th>Tag</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="active-accounts-body">
-                                <!-- Populated by JS -->
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-            </div>
 
-            <!-- Page: Banned Accounts -->
-            <div id="page-banned" class="page-view hidden">
-                <header class="page-header">
-                    <h2><span style="color: var(--danger-color);"><i class="fa-solid fa-ban"></i></span> Banned Accounts</h2>
-                    <div class="table-actions">
-                        <div class="search-box">
-                            <i class="fa-solid fa-search"></i>
-                            <input type="text" id="search-banned" placeholder="Search email...">
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <h4 style="font-size: 1.05rem; font-weight: 700;"><i class="fa-solid fa-clock-rotate-left"></i> Recent Global Audit Activity</h4>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>Actor</th>
+                                        <th>Role</th>
+                                        <th>Action</th>
+                                        <th>Target</th>
+                                        <th>Result</th>
+                                        <th>Timestamp</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-recent-audit-body"></tbody>
+                            </table>
                         </div>
                     </div>
-                </header>
-                <section class="dashboard-section list-section">
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Prof No.</th>
-                                    <th>Email</th>
-                                    <th>Server</th>
-                                    <th>Current Points</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="banned-accounts-body">
-                                <!-- Populated by JS -->
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-            </div>
+                </div>
 
-            <!-- Page: Bulk Updations -->
-            <div id="page-updations" class="page-view hidden">
-                <header class="page-header">
-                    <div class="header-row" style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                        <h2>Bulk Updations</h2>
-                        <button id="open-upload-modal-btn" class="btn primary-btn"><i class="fa-solid fa-cloud-arrow-up"></i> Upload Excel</button>
-                    </div>
-                </header>
-                <section class="dashboard-section list-section">
-                    <p class="text-secondary" style="margin-bottom: 1rem;">View and manage points updates across all accounts. Upload an Excel file to bulk-update current points.</p>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Prof No.</th>
-                                    <th>Email</th>
-                                    <th>Current Points</th>
-                                    <th>Update Points</th>
-                                    <th>Last Updated</th>
-                                </tr>
-                            </thead>
-                            <tbody id="updations-accounts-body">
-                                <!-- Populated by JS -->
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-            </div>
-
-            <!-- Page: Inventory -->
-            <div id="page-inventory" class="page-view hidden">
-                <header class="page-header">
-                    <h2>Inventory Management</h2>
-                    <div style="display: flex; gap: 10px;">
-                        <button id="tab-sold" class="btn primary-btn">Sold</button>
-                        <button id="tab-unsold" class="btn secondary-btn">Unsold</button>
-                    </div>
-                </header>
-                <section class="dashboard-section list-section">
-                    <div id="inventory-container" class="details-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                        <!-- Populated by JS -->
-                    </div>
-                </section>
-            </div>
-
-            <!-- Page: Downloads -->
-            <div id="page-downloads" class="page-view hidden">
-                <header class="page-header">
-                    <div>
-                        <h2><i class="fa-solid fa-download" style="color: var(--primary-color);"></i> Download Center</h2>
-                        <p class="text-secondary" style="font-size: 0.9rem; margin-top: 4px;">Export account profiles and points data filtered by account type and status.</p>
-                    </div>
-                    <div id="download-summary-badge" class="badge" style="background: rgba(99, 102, 241, 0.15); color: var(--primary-color); padding: 0.5rem 1rem; font-size: 0.9rem; border: 1px solid rgba(99, 102, 241, 0.3);">
-                        <i class="fa-solid fa-users"></i> <span id="download-match-count">0 Accounts</span>
-                    </div>
-                </header>
-
-                <!-- Filter Controls Card -->
-                <section class="dashboard-section" style="margin-bottom: 2rem;">
-                    <div class="download-filter-card" style="background: var(--card-bg); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
-                        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1.5rem;">
-                            
-                            <!-- Account Type Radio Selection -->
-                            <div>
-                                <label style="display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--text-primary);">
-                                    <i class="fa-solid fa-filter" style="color: var(--secondary-color); margin-right: 6px;"></i> Account Type
-                                </label>
-                                <div class="download-radio-group" style="display: flex; gap: 1.25rem; flex-wrap: wrap;">
-                                    <label class="radio-label">
-                                        <input type="radio" name="dl-account-type" value="old" id="dl-type-old" checked>
-                                        <span class="radio-custom"></span>
-                                        <span class="radio-text"><strong>Old Accounts</strong> <span class="text-secondary" style="font-size: 0.8rem;">(Has Redemptions)</span></span>
-                                    </label>
-                                    <label class="radio-label">
-                                        <input type="radio" name="dl-account-type" value="new" id="dl-type-new">
-                                        <span class="radio-custom"></span>
-                                        <span class="radio-text"><strong>New Accounts</strong> <span class="text-secondary" style="font-size: 0.8rem;">(No Redemptions)</span></span>
-                                    </label>
-                                    <label class="radio-label">
-                                        <input type="radio" name="dl-account-type" value="all" id="dl-type-all">
-                                        <span class="radio-custom"></span>
-                                        <span class="radio-text"><strong>All Accounts</strong> <span class="text-secondary" style="font-size: 0.8rem;">(Old + New)</span></span>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <!-- Account Status Filter -->
-                            <div style="min-width: 220px;">
-                                <label style="display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--text-primary);">
-                                    Account Status
-                                </label>
-                                <select id="dl-status-filter" class="form-input" style="width: 100%; padding: 0.6rem;">
-                                    <option value="all">All Statuses (Active & Banned)</option>
-                                    <option value="active" selected>Active Accounts Only</option>
-                                    <option value="banned">Banned Accounts Only</option>
+                <!-- VIEW: ADMIN USER MANAGEMENT -->
+                <div id="page-admin-users" class="page-pane hidden">
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                                <input type="text" id="filter-user-search" class="form-input" placeholder="Search user by name or email..." style="width: 280px;" oninput="loadAdminUsers()">
+                                <select id="filter-user-status" class="form-input" style="width: 180px;" onchange="loadAdminUsers()">
+                                    <option value="all">All Approval Statuses</option>
+                                    <option value="pending">Pending Approval</option>
+                                    <option value="approved">Approved</option>
+                                    <option value="suspended">Suspended</option>
+                                    <option value="rejected">Rejected</option>
                                 </select>
                             </div>
-
+                            <span id="users-count-badge" class="badge badge-primary">0 Users</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>User Profile</th>
+                                        <th>Registration Date</th>
+                                        <th>Approval Status</th>
+                                        <th>Active Accounts</th>
+                                        <th>Banned Accounts</th>
+                                        <th>Total Points</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-users-table-body"></tbody>
+                            </table>
                         </div>
                     </div>
-                </section>
+                </div>
 
-                <!-- Two Download Cards -->
-                <section class="dashboard-section" style="margin-bottom: 2rem;">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
-                        
-                        <!-- Option A: Detailed Account Download -->
-                        <div class="download-card" style="background: var(--card-bg); padding: 2rem; border-radius: 12px; border: 1px solid var(--border-color); display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden;">
-                            <div style="position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--primary-color);"></div>
-                            <div>
-                                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
-                                    <div style="width: 44px; height: 44px; border-radius: 10px; background: rgba(99, 102, 241, 0.15); display: flex; align-items: center; justify-content: center; color: var(--primary-color); font-size: 1.3rem;">
-                                        <i class="fa-solid fa-address-card"></i>
-                                    </div>
-                                    <div>
-                                        <h3 style="font-size: 1.25rem; font-weight: 600;">Detailed Account Download</h3>
-                                        <span class="badge badge-active" id="dl-detailed-badge" style="font-size: 0.75rem; margin-top: 2px;">Respects Selection</span>
-                                    </div>
-                                </div>
-                                <p class="text-secondary" style="font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.25rem;">
-                                    Export full account records including credentials, alternative email, server, current points, redeemed item history, and account type.
-                                </p>
-                                
-                                <div style="margin-bottom: 1.5rem;">
-                                    <div style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 0.5rem;">Export Columns (1 Row / Account):</div>
-                                    <div class="column-chips" style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
-                                        <span class="col-chip">Profile No.</span>
-                                        <span class="col-chip">Email</span>
-                                        <span class="col-chip">Password</span>
-                                        <span class="col-chip">Alternative Mail</span>
-                                        <span class="col-chip">Server</span>
-                                        <span class="col-chip">Current Present Points</span>
-                                        <span class="col-chip">Redeemed Item</span>
-                                        <span class="col-chip">Old/New Account</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; padding-top: 1rem; border-top: 1px solid var(--border-color);">
-                                <button id="btn-dl-detailed-xlsx" class="btn primary-btn" style="flex: 1; min-width: 150px;">
-                                    <i class="fa-solid fa-file-excel"></i> Excel (.xlsx)
-                                </button>
-                                <button id="btn-dl-detailed-pdf" class="btn secondary-btn" style="flex: 1; min-width: 140px; border-color: #ef4444; color: #ef4444;">
-                                    <i class="fa-solid fa-file-pdf"></i> PDF (.pdf)
-                                </button>
-                                <button id="btn-dl-detailed-csv" class="btn secondary-btn" style="flex: 1; min-width: 130px;">
-                                    <i class="fa-solid fa-file-csv"></i> CSV
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Option B: Points List Download -->
-                        <div class="download-card" style="background: var(--card-bg); padding: 2rem; border-radius: 12px; border: 1px solid var(--border-color); display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden;">
-                            <div style="position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--secondary-color);"></div>
-                            <div>
-                                <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
-                                    <div style="width: 44px; height: 44px; border-radius: 10px; background: rgba(34, 211, 238, 0.15); display: flex; align-items: center; justify-content: center; color: var(--secondary-color); font-size: 1.3rem;">
-                                        <i class="fa-solid fa-coins"></i>
-                                    </div>
-                                    <div>
-                                        <h3 style="font-size: 1.25rem; font-weight: 600;">Points List Download</h3>
-                                        <span class="badge" style="background: rgba(34, 211, 238, 0.15); color: var(--secondary-color); font-size: 0.75rem; margin-top: 2px;">Points Columns ONLY</span>
-                                    </div>
-                                </div>
-                                <p class="text-secondary" style="font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.25rem;">
-                                    Clean, lightweight list of accounts and points only. Strictly excludes passwords, alternative emails, and redemption information.
-                                </p>
-                                
-                                <div style="margin-bottom: 1.5rem;">
-                                    <div style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 0.5rem;">Export Columns ONLY:</div>
-                                    <div class="column-chips" style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
-                                        <span class="col-chip highlight-chip">Profile No.</span>
-                                        <span class="col-chip highlight-chip">Email</span>
-                                        <span class="col-chip highlight-chip">Server</span>
-                                        <span class="col-chip highlight-chip">Points</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; padding-top: 1rem; border-top: 1px solid var(--border-color);">
-                                <button id="btn-dl-points-xlsx" class="btn primary-btn" style="flex: 1; min-width: 150px; background: linear-gradient(135deg, #06b6d4, #3b82f6);">
-                                    <i class="fa-solid fa-file-excel"></i> Excel (.xlsx)
-                                </button>
-                                <button id="btn-dl-points-pdf" class="btn secondary-btn" style="flex: 1; min-width: 140px; border-color: #ef4444; color: #ef4444;">
-                                    <i class="fa-solid fa-file-pdf"></i> PDF (.pdf)
-                                </button>
-                                <button id="btn-dl-points-csv" class="btn secondary-btn" style="flex: 1; min-width: 130px;">
-                                    <i class="fa-solid fa-file-csv"></i> CSV
-                                </button>
-                            </div>
-                        </div>
-
+                <!-- VIEW: DEDICATED INDIVIDUAL USER PROFILE (12 TABS) -->
+                <div id="page-admin-user-detail" class="page-pane hidden">
+                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+                        <button class="btn secondary-btn" onclick="showAdminPage('admin-users')"><i class="fa-solid fa-arrow-left"></i> Back to Users</button>
+                        <h3 id="detail-user-header" style="font-size: 1.4rem; font-weight: 700;">User Details</h3>
+                        <div id="detail-user-status-badge"></div>
                     </div>
-                </section>
 
-                <!-- Live Preview Table Section -->
-                <section class="dashboard-section list-section">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
-                        <h3 style="font-size: 1.1rem; font-weight: 600;"><i class="fa-solid fa-eye" style="color: var(--secondary-color);"></i> Filtered Accounts Preview</h3>
-                        <span id="dl-preview-status-text" class="text-secondary" style="font-size: 0.85rem;">Showing matches</span>
+                    <!-- 12 TABS NAVIGATION -->
+                    <div class="tabs-nav">
+                        <button class="tab-btn active" onclick="switchUserTab('summary')"><i class="fa-solid fa-gauge"></i> Summary</button>
+                        <button class="tab-btn" onclick="switchUserTab('active')"><i class="fa-solid fa-circle-check"></i> Active Accounts</button>
+                        <button class="tab-btn" onclick="switchUserTab('banned')"><i class="fa-solid fa-circle-ban"></i> Banned Accounts</button>
+                        <button class="tab-btn" onclick="switchUserTab('old')"><i class="fa-solid fa-archive"></i> Old Accounts</button>
+                        <button class="tab-btn" onclick="switchUserTab('new')"><i class="fa-solid fa-sparkles"></i> New Accounts</button>
+                        <button class="tab-btn" onclick="switchUserTab('points')"><i class="fa-solid fa-coins"></i> Points Overview</button>
+                        <button class="tab-btn" onclick="switchUserTab('redemption')"><i class="fa-solid fa-gift"></i> Redemption</button>
+                        <button class="tab-btn" onclick="switchUserTab('requests')"><i class="fa-solid fa-paper-plane"></i> Requests</button>
+                        <button class="tab-btn" onclick="switchUserTab('forms')"><i class="fa-solid fa-clipboard-check"></i> Forms</button>
+                        <button class="tab-btn" onclick="switchUserTab('activity')"><i class="fa-solid fa-history"></i> Activity Logs</button>
+                        <button class="tab-btn" onclick="switchUserTab('permissions')"><i class="fa-solid fa-shield-halved"></i> Permissions</button>
+                        <button class="tab-btn" onclick="switchUserTab('settings')"><i class="fa-solid fa-sliders"></i> Settings</button>
                     </div>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Prof No.</th>
-                                    <th>Email</th>
-                                    <th>Server</th>
-                                    <th>Current Points</th>
-                                    <th>Type</th>
-                                    <th>Redeemed Items</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="download-preview-body">
-                                <!-- Populated by JS -->
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-            </div>
 
-            <!-- Page: WhatsApp Access & Bot -->
-            <div id="page-whatsapp" class="page-view hidden">
-                <header class="page-header">
-                    <div class="header-row" style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                        <div>
-                            <h2><i class="fa-brands fa-whatsapp" style="color: #25D366;"></i> WhatsApp Bot & Access</h2>
-                            <p class="text-secondary" style="font-size: 0.9rem; margin-top: 4px;">Authorize phone numbers to query and fast-update account points via WhatsApp with mandatory confirmation.</p>
-                        </div>
-                        <button id="btn-open-add-wa-user" class="btn primary-btn"><i class="fa-solid fa-user-plus"></i> Add Authorized Number</button>
+                    <div id="user-tab-content-container">
+                        <!-- Populated dynamically per tab -->
                     </div>
-                </header>
+                </div>
 
-                <!-- Command Reference Banner -->
-                <section class="dashboard-section" style="margin-bottom: 1.5rem;">
-                    <div style="background: var(--card-bg); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
-                        <h4 style="font-size: 1rem; margin-bottom: 0.8rem; display: flex; align-items: center; gap: 0.5rem;">
-                            <i class="fa-solid fa-bolt" style="color: var(--secondary-color);"></i> WhatsApp Interactive Menu & Fast Commands
-                        </h4>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; font-size: 0.88rem;">
-                            <div style="background: var(--bg-color); padding: 0.8rem 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
-                                <code style="color: var(--secondary-color); font-weight: bold; font-size: 0.95rem;">P2</code>
-                                <div class="text-secondary" style="margin-top: 3px;">Open Profile #2 Menu (Options 1, 2, 3)</div>
-                            </div>
-                            <div style="background: var(--bg-color); padding: 0.8rem 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
-                                <code style="color: #6366f1; font-weight: bold; font-size: 0.95rem;">Option 1: Edit Info</code>
-                                <div class="text-secondary" style="margin-top: 3px;">Update Server, Status, Pass, Notes</div>
-                            </div>
-                            <div style="background: var(--bg-color); padding: 0.8rem 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
-                                <code style="color: var(--success-color); font-weight: bold; font-size: 0.95rem;">Option 2: Points</code>
-                                <div class="text-secondary" style="margin-top: 3px;">+500, -200, or 5000 with confirm</div>
-                            </div>
-                            <div style="background: var(--bg-color); padding: 0.8rem 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
-                                <code style="color: #ec4899; font-weight: bold; font-size: 0.95rem;">Option 3: Redeem (1-9)</code>
-                                <div class="text-secondary" style="margin-top: 3px;">Amazon, Overwatch, Roblox, etc.</div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Real WhatsApp Connection Section (QR Scanner) -->
-                <section class="dashboard-section" style="margin-bottom: 2rem;">
-                    <div style="background: linear-gradient(135deg, rgba(37, 211, 102, 0.08) 0%, rgba(99, 102, 241, 0.05) 100%); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(37, 211, 102, 0.3);">
-                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-                            <div>
-                                <h3 style="font-size: 1.1rem; font-weight: 600; display: flex; align-items: center; gap: 0.6rem;">
-                                    <i class="fa-brands fa-whatsapp" style="color: #25D366; font-size: 1.4rem;"></i> Connect Real WhatsApp Bot
-                                    <span id="wa-connection-badge" class="badge badge-banned">🔴 Disconnected</span>
-                                </h3>
-                                <p class="text-secondary" style="font-size: 0.88rem; margin-top: 4px;">
-                                    Link your WhatsApp to send & receive live point updates directly from your mobile chat.
-                                </p>
+                <!-- VIEW: ALL ACCOUNTS (ADMIN) -->
+                <div id="page-admin-all-accounts" class="page-pane hidden">
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                                <input type="text" id="all-acc-search" class="form-input" placeholder="Search by email..." style="width: 250px;" oninput="filterAllAccountsTable()">
+                                <select id="all-acc-status-filter" class="form-input" style="width: 160px;" onchange="filterAllAccountsTable()">
+                                    <option value="all">All Statuses</option>
+                                    <option value="active">Active Only</option>
+                                    <option value="banned">Banned Only</option>
+                                </select>
+                                <select id="all-acc-class-filter" class="form-input" style="width: 160px;" onchange="filterAllAccountsTable()">
+                                    <option value="all">All Classifications</option>
+                                    <option value="old">Old Accounts</option>
+                                    <option value="new">New Accounts</option>
+                                </select>
                             </div>
                             <div style="display: flex; gap: 0.75rem;">
-                                <button id="btn-start-wa" class="btn primary-btn" style="background: #25D366; border-color: #25D366; color: #fff;">
-                                    <i class="fa-solid fa-qrcode"></i> Link Device (Scan QR)
-                                </button>
-                                <button id="btn-disconnect-wa" class="btn secondary-btn hidden" style="color: var(--danger-color); border-color: var(--danger-color);">
-                                    <i class="fa-solid fa-power-off"></i> Disconnect
-                                </button>
+                                <button class="btn secondary-btn" onclick="openUploadExcelModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel</button>
+                                <button class="btn primary-btn" onclick="openCreateAccountModal()"><i class="fa-solid fa-user-plus"></i> Add Account</button>
                             </div>
                         </div>
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>Prof #</th>
+                                        <th>Account Identifier</th>
+                                        <th>Server</th>
+                                        <th>Current Points</th>
+                                        <th>Classification</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="all-accounts-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
 
-                        <!-- QR Code Container (Hidden by default until clicked) -->
-                        <div id="wa-qr-box" class="hidden" style="margin-top: 1.5rem; padding: 1.5rem; background: var(--bg-color); border-radius: 10px; border: 1px dashed rgba(37, 211, 102, 0.5); display: flex; align-items: center; gap: 2rem; flex-wrap: wrap;">
-                            <div id="wa-qr-img-container" style="background: white; padding: 12px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); min-width: 200px; min-height: 200px; display: flex; align-items: center; justify-content: center;">
-                                <span id="wa-qr-loading" class="text-secondary" style="font-size: 0.9rem; color: #333;">Generating QR...</span>
-                                <img id="wa-qr-img" src="" alt="WhatsApp QR Code" style="display: none; width: 180px; height: 180px;">
+                <!-- VIEW: OLD / NEW DRAG & DROP CLASSIFICATION BOARD (ADMIN) -->
+                <div id="page-admin-classification" class="page-pane hidden">
+                    <div style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <h3 style="font-size: 1.3rem; font-weight: 700;">Account Classification Management</h3>
+                            <p class="text-secondary" style="font-size: 0.88rem;">Drag and drop account cards between Old and New categories, or select multiple accounts to move together.</p>
+                        </div>
+                        <div style="display: flex; gap: 0.75rem;">
+                            <button class="btn secondary-btn" onclick="openBulkMoveModal()"><i class="fa-solid fa-arrows-left-right"></i> Move Selected</button>
+                        </div>
+                    </div>
+
+                    <div class="drag-drop-board">
+                        <!-- OLD ACCOUNTS COLUMN -->
+                        <div class="drag-column" id="col-old-accounts" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'old')">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                                <h4 style="font-size: 1.1rem; font-weight: 700; color: #a78bfa;"><i class="fa-solid fa-archive"></i> Old Accounts</h4>
+                                <span id="count-old-accounts" class="badge" style="background: rgba(167, 139, 250, 0.2); color: #a78bfa;">0</span>
                             </div>
-                            <div style="max-width: 450px;">
-                                <h4 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-primary);">How to link your WhatsApp:</h4>
-                                <ol style="padding-left: 1.2rem; line-height: 1.6; font-size: 0.88rem; color: var(--text-secondary);">
-                                    <li>Open <strong>WhatsApp</strong> on your mobile phone.</li>
-                                    <li>Tap <strong>Settings / 3-Dots Menu</strong> &rarr; <strong>Linked Devices</strong>.</li>
-                                    <li>Tap <strong>Link a Device</strong> and point your camera at this QR code.</li>
-                                    <li>Once connected, send <code>P2</code> or <code>P2 +500</code> from your authorized phone!</li>
-                                </ol>
+                            <div id="list-old-accounts" style="flex: 1; overflow-y: auto; max-height: 600px;"></div>
+                        </div>
+
+                        <!-- NEW ACCOUNTS COLUMN -->
+                        <div class="drag-column" id="col-new-accounts" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'new')">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                                <h4 style="font-size: 1.1rem; font-weight: 700; color: #38bdf8;"><i class="fa-solid fa-sparkles"></i> New Accounts</h4>
+                                <span id="count-new-accounts" class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8;">0</span>
+                            </div>
+                            <div id="list-new-accounts" style="flex: 1; overflow-y: auto; max-height: 600px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: REWARD CATALOGUE (ADMIN) -->
+                <div id="page-admin-catalog" class="page-pane hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <div>
+                            <h3 style="font-size: 1.3rem; font-weight: 700;">Master Reward Catalogue</h3>
+                            <p class="text-secondary" style="font-size: 0.88rem;">Configure master reward items, point requirements, and user display abbreviations.</p>
+                        </div>
+                        <button class="btn primary-btn" onclick="openRewardModal()"><i class="fa-solid fa-plus"></i> Add Reward Item</button>
+                    </div>
+
+                    <div class="rewards-grid" id="admin-rewards-container"></div>
+                </div>
+
+                <!-- VIEW: REWARD ELIGIBILITY & MATCHING -->
+                <div id="page-admin-matching" class="page-pane hidden">
+                    <div class="table-card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+                        <h4 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">Reward Eligibility & Account Matcher</h4>
+                        <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;">
+                            <div style="flex: 1; min-width: 250px;">
+                                <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; display: block;">Select Reward Item:</label>
+                                <select id="match-reward-select" class="form-input" onchange="runRewardMatching()"></select>
+                            </div>
+                            <div style="flex: 1; min-width: 250px;">
+                                <label style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; display: block;">Filter by User (Optional):</label>
+                                <select id="match-user-select" class="form-input" onchange="runRewardMatching()">
+                                    <option value="">All Platform Users</option>
+                                </select>
                             </div>
                         </div>
                     </div>
-                </section>
 
-                <!-- Two-Column Grid: Authorized Users Table & Interactive Simulator -->
-                <section class="dashboard-section">
-                    <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 1.5rem;" class="wa-grid-layout">
-                        
-                        <!-- Left Column: Authorized Users Table -->
-                        <div class="list-section">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                                <h3 style="font-size: 1.15rem; font-weight: 600;"><i class="fa-solid fa-users-gear"></i> Authorized Phone Numbers</h3>
-                                <span id="wa-users-count-badge" class="badge badge-active">0 Authorized</span>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                        <div class="table-card">
+                            <div class="table-header-bar" style="border-left: 4px solid var(--success-color);">
+                                <h4 style="font-size: 1rem; font-weight: 700; color: var(--success-color);"><i class="fa-solid fa-circle-check"></i> Eligible Accounts (Meets Threshold)</h4>
+                                <span id="match-eligible-count" class="badge badge-active">0</span>
                             </div>
-                            <div class="table-container">
-                                <table class="data-table">
+                            <div class="table-responsive" style="max-height: 480px;">
+                                <table class="modern-table">
                                     <thead>
                                         <tr>
-                                            <th>Name</th>
-                                            <th>Phone Number</th>
-                                            <th>Permissions</th>
-                                            <th>Status</th>
-                                            <th>Actions</th>
+                                            <th>Prof #</th>
+                                            <th>Email</th>
+                                            <th>Current Points</th>
+                                            <th>Surplus Pts</th>
                                         </tr>
                                     </thead>
-                                    <tbody id="wa-users-table-body">
-                                        <!-- Populated dynamically by JS -->
-                                    </tbody>
+                                    <tbody id="match-eligible-body"></tbody>
                                 </table>
                             </div>
                         </div>
 
-                        <!-- Right Column: Interactive Bot Simulator -->
-                        <div style="background: var(--card-bg); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color); display: flex; flex-direction: column; max-height: 600px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
-                                <h3 style="font-size: 1.05rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
-                                    <i class="fa-brands fa-whatsapp" style="color: #25D366; font-size: 1.2rem;"></i> Bot Simulator
-                                </h3>
-                                <span class="badge" style="background: rgba(37, 211, 102, 0.15); color: #25D366; font-size: 0.75rem;">Live Testing</span>
+                        <div class="table-card">
+                            <div class="table-header-bar" style="border-left: 4px solid var(--warning-color);">
+                                <h4 style="font-size: 1rem; font-weight: 700; color: var(--warning-color);"><i class="fa-solid fa-clock"></i> Approaching Eligibility</h4>
+                                <span id="match-approaching-count" class="badge badge-pending">0</span>
                             </div>
+                            <div class="table-responsive" style="max-height: 480px;">
+                                <table class="modern-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Prof #</th>
+                                            <th>Email</th>
+                                            <th>Current Points</th>
+                                            <th>Points Needed</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="match-approaching-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-                            <div style="margin-bottom: 0.75rem;">
-                                <label style="font-size: 0.8rem; color: var(--text-secondary); display: block; margin-bottom: 0.3rem;">Simulate Sender Number:</label>
-                                <select id="sim-phone-select" class="form-input" style="padding: 0.45rem 0.6rem; font-size: 0.85rem; width: 100%;">
-                                    <option value="">Select Authorized Number...</option>
+                <!-- VIEW: NOTIFICATION CENTER (ADMIN) -->
+                <div id="page-admin-notifications" class="page-pane hidden">
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <h4 style="font-size: 1.1rem; font-weight: 700;"><i class="fa-solid fa-bell"></i> Centralized Notification Center</h4>
+                            <span id="notif-total-badge" class="badge badge-primary">0 Total</span>
+                        </div>
+                        <div id="admin-notifications-list" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;"></div>
+                    </div>
+                </div>
+
+                <!-- VIEW: MONTHLY REVIEWS & FORMS (ADMIN) -->
+                <div id="page-admin-forms" class="page-pane hidden">
+                    <div class="table-card" style="padding: 1.5rem; margin-bottom: 2rem;">
+                        <h4 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;"><i class="fa-solid fa-calendar-check"></i> Monthly Review Schedule</h4>
+                        <p class="text-secondary" style="font-size: 0.88rem; margin-bottom: 1.5rem;">Configure the mandatory periodic form required from approved users to maintain dashboard access.</p>
+                        <div id="admin-form-schedule-card"></div>
+                    </div>
+
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <h4 style="font-size: 1.1rem; font-weight: 700;"><i class="fa-solid fa-list-check"></i> User Review Submissions</h4>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Submitted Date</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-form-submissions-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: DOWNLOAD CENTER (ADMIN) -->
+                <div id="page-admin-downloads" class="page-pane hidden">
+                    <div class="table-card" style="padding: 2rem; margin-bottom: 2rem;">
+                        <h3 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem;"><i class="fa-solid fa-file-pdf" style="color: var(--danger-color);"></i> Executive PDF Report Generator</h3>
+                        <p class="text-secondary" style="font-size: 0.88rem; margin-bottom: 1.5rem;">
+                            Generate professional PointPulse branded PDF reports with cover pages, summaries, headers, and footers. Passwords and credentials are strictly excluded.
+                        </p>
+
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem;">
+                            <div>
+                                <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.4rem;">Report Type:</label>
+                                <select id="dl-report-type" class="form-input">
+                                    <option value="All Accounts & Points">All Users – Detailed Report</option>
+                                    <option value="Active Accounts Summary">Active Accounts Report</option>
+                                    <option value="Banned Accounts Summary">Banned Accounts Report</option>
+                                    <option value="Old Accounts Summary">Old Accounts Report</option>
+                                    <option value="New Accounts Summary">New Accounts Report</option>
+                                    <option value="Redemption Audit">Redemption History Report</option>
                                 </select>
                             </div>
-
-                            <!-- Quick Command Chips -->
-                            <div style="margin-bottom: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.35rem;">
-                                <button type="button" class="sim-chip" onclick="setSimCommand('START')">START</button>
-                                <button type="button" class="sim-chip" onclick="setSimCommand('P2')">P2</button>
-                                <button type="button" class="sim-chip" onclick="setSimCommand('DOWNLOAD')">DOWNLOAD</button>
-                                <button type="button" class="sim-chip" onclick="setSimCommand('PDF')">PDF</button>
-                                <button type="button" class="sim-chip" onclick="setSimCommand('1')">1</button>
-                                <button type="button" class="sim-chip" onclick="setSimCommand('5')">5 (PDF)</button>
-                                <button type="button" class="sim-chip" onclick="setSimCommand('YES')">YES</button>
-                                <button type="button" class="sim-chip" onclick="setSimCommand('NO')">NO</button>
+                            <div>
+                                <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.4rem;">Target User (Optional):</label>
+                                <select id="dl-target-user" class="form-input">
+                                    <option value="">All Platform Users</option>
+                                </select>
                             </div>
-
-                            <!-- Chat Messages Window -->
-                            <div id="sim-chat-box" style="flex: 1; min-height: 240px; max-height: 320px; overflow-y: auto; background: var(--bg-color); border-radius: 8px; border: 1px solid var(--border-color); padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 0.75rem;">
-                                <div class="sim-msg sim-msg-bot">
-                                    <div class="sim-msg-sender">🤖 PointPulse Bot</div>
-                                    <div>Hello! Type a command (e.g. <code>P1</code> or <code>P1 +500</code>) to simulate a WhatsApp message.</div>
-                                </div>
+                            <div>
+                                <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.4rem;">Status Filter:</label>
+                                <select id="dl-status-filter" class="form-input">
+                                    <option value="all">All Statuses</option>
+                                    <option value="active">Active Only</option>
+                                    <option value="banned">Banned Only</option>
+                                </select>
                             </div>
-
-                            <!-- Input Bar -->
-                            <form id="sim-form" style="display: flex; gap: 0.5rem;" onsubmit="return false;">
-                                <input type="text" id="sim-input" placeholder="Type command (e.g. P1 +500, YES)..." class="form-input" style="flex: 1; padding: 0.6rem;" autocomplete="off">
-                                <button id="btn-sim-send" class="btn primary-btn" style="padding: 0.6rem 1.2rem;"><i class="fa-solid fa-paper-plane"></i></button>
-                            </form>
+                            <div>
+                                <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.4rem;">Classification Filter:</label>
+                                <select id="dl-class-filter" class="form-input">
+                                    <option value="all">All Classifications</option>
+                                    <option value="old">Old Accounts</option>
+                                    <option value="new">New Accounts</option>
+                                </select>
+                            </div>
                         </div>
 
-                    </div>
-                </section>
-            </div>
-
-            <!-- Page: Account Detail View -->
-            <div id="page-account-detail" class="page-view hidden">
-                <header class="page-header">
-                    <div class="header-row" style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                        <div style="display: flex; align-items: center; gap: 1rem;">
-                            <button id="back-to-active-btn" class="icon-btn" style="font-size: 1.2rem; color: var(--text-secondary);"><i class="fa-solid fa-arrow-left"></i></button>
-                            <h2>Account Details</h2>
+                        <div style="display: flex; gap: 1rem;">
+                            <button class="btn primary-btn" onclick="generatePdfReport()"><i class="fa-solid fa-file-pdf"></i> Generate Branded PDF</button>
+                            <button class="btn secondary-btn" onclick="downloadCsvExport()"><i class="fa-solid fa-file-csv"></i> Export CSV</button>
                         </div>
-                        <button id="share-total-report-btn" class="btn primary-btn"><i class="fa-solid fa-share-nodes"></i> Share Report</button>
-                    </div>
-                </header>
-                
-                <div class="dashboard-section" style="margin-bottom: 2rem;">
-                    <div class="details-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
-                        
-                        <!-- Overview Card -->
-                        <div class="detail-card" style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border-color);">
-                            <h4 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;"><i class="fa-solid fa-user"></i> Overview</h4>
-                            <div style="margin-bottom: 0.5rem;"><span class="text-secondary">Profile No.:</span> <strong id="detail-profile"></strong></div>
-                            <div style="margin-bottom: 0.5rem;"><span class="text-secondary">Email:</span> <strong id="detail-email"></strong></div>
-                            <div style="margin-bottom: 0.5rem;"><span class="text-secondary">Server:</span> <span id="detail-server"></span></div>
-                        </div>
-
-                        <!-- Credentials Card -->
-                        <div class="detail-card" style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border-color);">
-                            <h4 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;"><i class="fa-solid fa-lock"></i> Credentials</h4>
-                            <div style="margin-bottom: 0.5rem;"><span class="text-secondary">Proton Mail:</span> <strong id="detail-proton"></strong></div>
-                            <div style="margin-bottom: 0.5rem;"><span class="text-secondary">Password:</span> <strong id="detail-password" style="font-family: monospace;"></strong></div>
-                            <div style="margin-bottom: 0.5rem;"><span class="text-secondary">Alternative Mail:</span> <strong id="detail-alt"></strong></div>
-                        </div>
-
-                        <!-- Activity Card -->
-                        <div class="detail-card" style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border-color);">
-                            <h4 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;"><i class="fa-solid fa-chart-line"></i> Activity</h4>
-                            <div style="margin-bottom: 0.5rem;"><span class="text-secondary">Current Points:</span> <strong id="detail-points" style="font-size: 1.2rem; color: var(--success-color);"></strong></div>
-                            <div style="margin-bottom: 0.5rem;"><span class="text-secondary">Last Updated:</span> <strong id="detail-last-updated"></strong></div>
-                            <div style="margin-bottom: 0.5rem;"><span class="text-secondary">Total Redemptions:</span> <strong id="detail-total-redemptions"></strong></div>
-                        </div>
-
                     </div>
                 </div>
 
-                <section class="dashboard-section list-section" style="margin-bottom: 2rem;">
-                    <h4 style="margin-bottom: 1rem;"><i class="fa-solid fa-arrow-trend-up"></i> Points Growth History</h4>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Previous Points</th>
-                                    <th>New Points</th>
-                                    <th>Points Growth</th>
-                                    <th>Date Updated</th>
-                                </tr>
-                            </thead>
-                            <tbody id="detail-points-history-body">
-                                <!-- Populated dynamically -->
-                            </tbody>
-                        </table>
+                <!-- VIEW: AUDIT LOGS (ADMIN) -->
+                <div id="page-admin-audit" class="page-pane hidden">
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <h4 style="font-size: 1.1rem; font-weight: 700;"><i class="fa-solid fa-shield"></i> Append-Only Governance Audit Trail</h4>
+                            <input type="text" id="audit-search" class="form-input" placeholder="Search audit logs..." style="width: 250px;" oninput="loadAuditLogs()">
+                        </div>
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>Actor</th>
+                                        <th>Role</th>
+                                        <th>Action</th>
+                                        <th>Previous</th>
+                                        <th>New Value</th>
+                                        <th>Result</th>
+                                        <th>Timestamp</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-audit-table-body"></tbody>
+                            </table>
+                        </div>
                     </div>
-                </section>
+                </div>
 
-                <section class="dashboard-section list-section">
-                    <h4 style="margin-bottom: 1rem;"><i class="fa-solid fa-gift"></i> Redeemed History</h4>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Redeemed Item</th>
-                                    <th>Date</th>
-                                    <th>Redeemed Code</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="detail-redemptions-body">
-                                <!-- JS -->
-                            </tbody>
-                        </table>
+                <!-- ================= USER DASHBOARD PANES ================= -->
+
+                <!-- VIEW: USER OVERVIEW -->
+                <div id="page-user-overview" class="page-pane hidden">
+                    <div class="kpi-grid" id="user-kpi-container"></div>
+
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                        <div class="table-card" style="padding: 1.5rem;">
+                            <h4 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 1rem;"><i class="fa-solid fa-chart-line" style="color: var(--primary-color);"></i> My Points Growth</h4>
+                            <canvas id="chart-user-points" style="max-height: 280px;"></canvas>
+                        </div>
+                        <div class="table-card" style="padding: 1.5rem;">
+                            <h4 style="font-size: 1.05rem; font-weight: 700; margin-bottom: 1rem;"><i class="fa-solid fa-gift" style="color: var(--secondary-color);"></i> Reward Eligibility</h4>
+                            <div id="user-eligible-rewards-summary"></div>
+                        </div>
                     </div>
-                </section>
-            </div>
+                </div>
 
-        </main>
+                <!-- VIEW: USER ACTIVE ACCOUNTS (NO TAG COLUMN!) -->
+                <div id="page-user-active-accounts" class="page-pane hidden">
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                                <input type="text" id="user-acc-search" class="form-input" placeholder="Search account..." style="width: 250px;" oninput="filterUserActiveTable()">
+                                <select id="user-acc-sort" class="form-input" style="width: 180px;" onchange="filterUserActiveTable()">
+                                    <option value="profile-asc">Profile (Low to High)</option>
+                                    <option value="profile-desc">Profile (High to Low)</option>
+                                    <option value="points-desc">Points (High to Low)</option>
+                                    <option value="points-asc">Points (Low to High)</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 0.75rem;">
+                                <button id="btn-user-update-points" class="btn secondary-btn" onclick="openRequestPointsModal()"><i class="fa-solid fa-bolt"></i> Request Points Permission</button>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>Prof #</th>
+                                        <th>Account Identifier</th>
+                                        <th>Server</th>
+                                        <th>Current Points</th>
+                                        <th>Classification</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="user-active-accounts-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: USER BANNED ACCOUNTS -->
+                <div id="page-user-banned-accounts" class="page-pane hidden">
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <h4 style="font-size: 1.05rem; font-weight: 700; color: var(--danger-color);"><i class="fa-solid fa-ban"></i> Banned Accounts</h4>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>Prof #</th>
+                                        <th>Account Identifier</th>
+                                        <th>Server</th>
+                                        <th>Last Points</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="user-banned-accounts-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: USER OLD & NEW ACCOUNTS -->
+                <div id="page-user-classified-accounts" class="page-pane hidden">
+                    <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+                        <button id="btn-tab-user-old" class="btn primary-btn" onclick="toggleUserClassTab('old')">Old Accounts</button>
+                        <button id="btn-tab-user-new" class="btn secondary-btn" onclick="toggleUserClassTab('new')">New Accounts</button>
+                    </div>
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <h4 id="user-class-table-title" style="font-size: 1.05rem; font-weight: 700;">Old Accounts</h4>
+                            <button class="btn secondary-btn" onclick="openRequestClassificationModal()"><i class="fa-solid fa-exchange"></i> Request Reclassification</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>Prof #</th>
+                                        <th>Account Identifier</th>
+                                        <th>Current Points</th>
+                                        <th>Classification</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="user-classified-accounts-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: USER REWARDS -->
+                <div id="page-user-rewards" class="page-pane hidden">
+                    <h3 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem;">Published Rewards</h3>
+                    <p class="text-secondary" style="font-size: 0.88rem; margin-bottom: 1.5rem;">Items published by the administrator. Track eligibility and submit redemption requests.</p>
+                    <div class="rewards-grid" id="user-rewards-container"></div>
+                </div>
+
+                <!-- VIEW: USER REQUEST CENTER -->
+                <div id="page-user-requests" class="page-pane hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <h3 style="font-size: 1.3rem; font-weight: 700;">My Request Center</h3>
+                        <button class="btn primary-btn" onclick="openCreateUserRequestModal()"><i class="fa-solid fa-plus"></i> Submit New Request</button>
+                    </div>
+                    <div class="table-card">
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>Request ID</th>
+                                        <th>Category</th>
+                                        <th>Subject</th>
+                                        <th>Date</th>
+                                        <th>Status</th>
+                                        <th>Admin Response</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="user-requests-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: USER DOWNLOADS -->
+                <div id="page-user-downloads" class="page-pane hidden">
+                    <div class="table-card" style="padding: 2rem;">
+                        <h3 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem;"><i class="fa-solid fa-download"></i> Request Report Download</h3>
+                        <p class="text-secondary" style="font-size: 0.88rem; margin-bottom: 1.5rem;">
+                            User downloads require administrator authorization. Submit a download request to receive a secure, expiring download link.
+                        </p>
+                        <button class="btn primary-btn" onclick="requestUserDownload()"><i class="fa-solid fa-paper-plane"></i> Request Download Access</button>
+                    </div>
+                </div>
+
+            </main>
+        </div>
     </div>
 
-    <!-- Modals -->
-    <!-- Upload Modal -->
-    <div class="modal-overlay hidden" id="upload-modal">
-        <div class="modal">
+    <!-- 6. PERIODIC REVIEW FORM FULL-SCREEN GATE OVERLAY -->
+    <div id="form-gate-overlay" class="form-gate-overlay hidden">
+        <div class="form-gate-card">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                <div>
+                    <h3 style="font-size: 1.4rem; font-weight: 700; color: var(--warning-color);"><i class="fa-solid fa-clipboard-check"></i> Periodic Account & Rewards Review</h3>
+                    <p class="text-secondary" style="font-size: 0.88rem; margin-top: 4px;">Mandatory submission required to unlock your dashboard access for this cycle.</p>
+                </div>
+                <span id="gate-deadline-badge" class="badge badge-pending">Deadline: 5th of Month</span>
+            </div>
+
+            <form id="periodic-review-form" onsubmit="submitMonthlyReviewForm(event)">
+                <div id="periodic-questions-container" style="display: flex; flex-direction: column; gap: 1.25rem; margin-bottom: 1.5rem;">
+                    <!-- 10 Questions injected by JS -->
+                </div>
+
+                <div style="border-top: 1px solid var(--border-color); padding-top: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+                    <button type="button" class="btn danger-btn" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+                    <button type="submit" class="btn primary-btn"><i class="fa-solid fa-check"></i> Submit & Unlock Dashboard</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 7. MODALS -->
+    <!-- Modal: Contact Admin -->
+    <div id="modal-contact-admin" class="modal-overlay hidden">
+        <div class="modal-box">
             <div class="modal-header">
-                <h3>Upload Excel Data</h3>
-                <button class="icon-btn close-modal"><i class="fa-solid fa-xmark"></i></button>
+                <h4 style="font-size: 1.15rem; font-weight: 700;"><i class="fa-solid fa-envelope"></i> Contact Administrator</h4>
+                <button class="icon-btn" onclick="closeModal('modal-contact-admin')"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                <p class="text-secondary" style="margin-bottom: 1rem; font-size: 0.9rem;">
-                    If profile numbers are missing, they will be auto-assigned. 
-                </p>
                 <div class="form-group">
-                    <input type="file" id="file-upload" accept=".csv, .xlsx" style="padding: 0; border: none; background: transparent;">
+                    <label>Subject *</label>
+                    <input type="text" id="contact-subject" class="form-input" placeholder="e.g. Inquiring regarding registration approval">
                 </div>
-                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
-                    <input type="checkbox" id="fresh-upload-checkbox" style="width: auto;">
-                    <label for="fresh-upload-checkbox" style="margin: 0;">Fresh Upload (Clear all existing accounts)</label>
+                <div class="form-group">
+                    <label>Message *</label>
+                    <textarea id="contact-message" rows="4" class="form-input" placeholder="Type your message to the administrator..."></textarea>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn primary-btn" id="confirm-upload-btn">Upload & Sync</button>
+                <button class="btn secondary-btn" onclick="closeModal('modal-contact-admin')">Cancel</button>
+                <button class="btn primary-btn" onclick="sendContactAdminMessage()">Send Message</button>
             </div>
         </div>
     </div>
 
-    <!-- Create Modal -->
-    <div class="modal-overlay hidden" id="create-modal">
-        <div class="modal">
+    <!-- Modal: Create / Edit Account -->
+    <div id="modal-account" class="modal-overlay hidden">
+        <div class="modal-box">
             <div class="modal-header">
-                <h3>Add New Profile</h3>
-                <button class="icon-btn close-modal"><i class="fa-solid fa-xmark"></i></button>
+                <h4 id="modal-account-title" style="font-size: 1.15rem; font-weight: 700;">Add Account Profile</h4>
+                <button class="icon-btn" onclick="closeModal('modal-account')"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
+                <input type="hidden" id="acc-id">
                 <div class="form-group">
-                    <label>Profile No. <span class="text-secondary" style="font-size: 0.8em;">(Optional, auto-assigns if blank)</span></label>
-                    <input type="number" id="create-profile">
+                    <label>Profile No. (Optional, auto-assigned if blank)</label>
+                    <input type="number" id="acc-profile-no" class="form-input">
                 </div>
                 <div class="form-group">
-                    <label>Email *</label>
-                    <input type="text" id="create-email" required>
+                    <label>Account Email / Identifier *</label>
+                    <input type="email" id="acc-email" class="form-input" required>
                 </div>
                 <div class="form-group">
                     <label>Server</label>
-                    <input type="text" id="create-server">
+                    <input type="text" id="acc-server" class="form-input" placeholder="e.g. US-TX#450">
                 </div>
                 <div class="form-group">
-                    <label>Proton Mail</label>
-                    <input type="email" id="create-proton">
+                    <label>Classification</label>
+                    <select id="acc-classification" class="form-input">
+                        <option value="new">New Account</option>
+                        <option value="old">Old Account</option>
+                    </select>
                 </div>
                 <div class="form-group">
-                    <label>Account Password</label>
-                    <input type="text" id="create-password">
-                </div>
-                <div class="form-group">
-                    <label>Alternative Email</label>
-                    <input type="email" id="create-alt-email">
+                    <label>Status</label>
+                    <select id="acc-status" class="form-input">
+                        <option value="active">Active</option>
+                        <option value="banned">Banned</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label>Initial Points</label>
-                    <input type="number" id="create-points" value="0">
+                    <input type="number" id="acc-initial-points" class="form-input" value="0">
                 </div>
                 <div class="form-group">
-                    <label>Notes / Tags</label>
-                    <textarea id="create-notes" rows="2" placeholder="e.g. slow growth, good account" style="width: 100%; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; resize: vertical;"></textarea>
+                    <label>Notes</label>
+                    <textarea id="acc-notes" rows="2" class="form-input"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary-btn" onclick="closeModal('modal-account')">Cancel</button>
+                <button class="btn primary-btn" onclick="saveAccountRecord()">Save Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Quick Points Update -->
+    <div id="modal-points-update" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h4 style="font-size: 1.15rem; font-weight: 700;"><i class="fa-solid fa-bolt"></i> Update Account Points</h4>
+                <button class="icon-btn" onclick="closeModal('modal-points-update')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="pu-account-id">
+                <p id="pu-account-info" class="text-secondary" style="margin-bottom: 1rem;"></p>
+                <div class="form-group">
+                    <label>New Points Value *</label>
+                    <input type="number" id="pu-points" class="form-input" required>
                 </div>
                 <div class="form-group">
-                    <label>Status</label>
-                    <select id="create-status">
-                        <option value="active">Active</option>
-                        <option value="banned">Banned</option>
+                    <label>Reason / Source</label>
+                    <input type="text" id="pu-reason" class="form-input" placeholder="e.g. Weekly sync, daily harvest">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary-btn" onclick="closeModal('modal-points-update')">Cancel</button>
+                <button class="btn primary-btn" onclick="submitPointsUpdate()">Update Points</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Request Permission -->
+    <div id="modal-request-permission" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h4 style="font-size: 1.15rem; font-weight: 700;"><i class="fa-solid fa-hand"></i> Submit User Request</h4>
+                <button class="icon-btn" onclick="closeModal('modal-request-permission')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Request Category *</label>
+                    <select id="req-category" class="form-input">
+                        <option value="points_update">Points Update Permission</option>
+                        <option value="account_correction">Account Information Correction</option>
+                        <option value="classification_change">Old / New Classification Change</option>
+                        <option value="download_permission">Download Permission Request</option>
+                        <option value="redemption">Redemption Related Request</option>
+                        <option value="contact_admin">General Administrator Message</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Subject *</label>
+                    <input type="text" id="req-subject" class="form-input" placeholder="Brief summary of your request">
+                </div>
+                <div class="form-group">
+                    <label>Message / Details *</label>
+                    <textarea id="req-message" rows="4" class="form-input" placeholder="Explain the reason and required duration or details..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary-btn" onclick="closeModal('modal-request-permission')">Cancel</button>
+                <button class="btn primary-btn" onclick="submitGeneralUserRequest()">Submit to Admin</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Grant Temporary Access Window (Admin) -->
+    <div id="modal-temp-window" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h4 style="font-size: 1.15rem; font-weight: 700;"><i class="fa-solid fa-clock"></i> Grant Temporary Points Window</h4>
+                <button class="icon-btn" onclick="closeModal('modal-temp-window')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="tw-user-id">
+                <p id="tw-user-info" class="text-secondary" style="margin-bottom: 1rem;"></p>
+                <div class="form-group">
+                    <label>Start Date & Time *</label>
+                    <input type="datetime-local" id="tw-start" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label>End Date & Time *</label>
+                    <input type="datetime-local" id="tw-end" class="form-input" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary-btn" onclick="closeModal('modal-temp-window')">Cancel</button>
+                <button class="btn primary-btn" onclick="saveTemporaryAccessWindow()">Grant Window</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Edit Reward Item (Admin) -->
+    <div id="modal-reward-edit" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h4 id="modal-reward-title" style="font-size: 1.15rem; font-weight: 700;">Reward Item</h4>
+                <button class="icon-btn" onclick="closeModal('modal-reward-edit')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="rw-id">
+                <div class="form-group">
+                    <label>Full Reward Name *</label>
+                    <input type="text" id="rw-name" class="form-input" placeholder="e.g. Amazon $5" required>
+                </div>
+                <div class="form-group">
+                    <label>Points Required *</label>
+                    <input type="number" id="rw-points" class="form-input" placeholder="e.g. 6500" required>
+                </div>
+                <div class="form-group">
+                    <label>User-Facing Display / Abbreviation *</label>
+                    <input type="text" id="rw-display" class="form-input" placeholder="e.g. AZ ($5) – 6500 pts" required>
+                </div>
+                <div class="form-group">
+                    <label>Publish Status</label>
+                    <select id="rw-published" class="form-input">
+                        <option value="1">Published (Visible)</option>
+                        <option value="0">Unpublished (Hidden)</option>
                     </select>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn primary-btn" id="save-create-btn">Create Profile</button>
+                <button class="btn secondary-btn" onclick="closeModal('modal-reward-edit')">Cancel</button>
+                <button class="btn primary-btn" onclick="saveRewardCatalogItem()">Save Reward</button>
             </div>
         </div>
     </div>
 
-    <!-- Edit Modal -->
-    <div class="modal-overlay hidden" id="edit-modal">
-        <div class="modal">
+    <!-- Modal: Upload Excel -->
+    <div id="modal-upload-excel" class="modal-overlay hidden">
+        <div class="modal-box">
             <div class="modal-header">
-                <h3>Edit Account Details</h3>
-                <button class="icon-btn close-modal"><i class="fa-solid fa-xmark"></i></button>
+                <h4 style="font-size: 1.15rem; font-weight: 700;"><i class="fa-solid fa-file-excel"></i> Upload Excel / CSV Data</h4>
+                <button class="icon-btn" onclick="closeModal('modal-upload-excel')"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
-                <input type="hidden" id="edit-id">
                 <div class="form-group">
-                    <label>Profile No.</label>
-                    <input type="number" id="edit-profile">
+                    <label>Select Spreadsheet File (.xlsx, .csv)</label>
+                    <input type="file" id="excel-file-input" accept=".xlsx, .csv" class="form-input">
                 </div>
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="text" id="edit-email">
-                </div>
-                <div class="form-group">
-                    <label>Server</label>
-                    <input type="text" id="edit-server">
-                </div>
-                <div class="form-group">
-                    <label>Proton Mail</label>
-                    <input type="email" id="edit-proton">
-                </div>
-                <div class="form-group">
-                    <label>Account Password</label>
-                    <input type="text" id="edit-password">
-                </div>
-                <div class="form-group">
-                    <label>Alternative Email</label>
-                    <input type="email" id="edit-alt-email">
-                </div>
-                <div class="form-group">
-                    <label>Notes / Tags</label>
-                    <textarea id="edit-notes" rows="2" placeholder="e.g. slow growth, good account" style="width: 100%; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; resize: vertical;"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Status</label>
-                    <select id="edit-status">
-                        <option value="active">Active</option>
-                        <option value="banned">Banned</option>
-                    </select>
+                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="fresh-upload-check" style="width: 18px; height: 18px;">
+                    <label for="fresh-upload-check" style="margin: 0; cursor: pointer;">Fresh Upload (Overwrite existing accounts)</label>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn primary-btn" id="save-edit-btn">Save Changes</button>
+                <button class="btn secondary-btn" onclick="closeModal('modal-upload-excel')">Cancel</button>
+                <button class="btn primary-btn" onclick="submitExcelUpload()"><i class="fa-solid fa-cloud-arrow-up"></i> Upload & Sync</button>
             </div>
         </div>
     </div>
 
-    <!-- Redeem Modal -->
-    <div class="modal-overlay hidden" id="redeem-modal">
-        <div class="modal">
-            <div class="modal-header">
-                <h3>Redeem Item</h3>
-                <button class="icon-btn close-modal"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="redeem-user-id">
-                <input type="hidden" id="redeem-user-email">
-                <input type="hidden" id="redeem-user-server">
-
-                <p>Select item to redeem for <strong id="redeem-email-display"></strong></p>
-                
-                <div class="form-group" style="margin-top: 1rem;">
-                    <label>Reward Item</label>
-                    <select id="redeem-item-select">
-                        <option value="Overwatch 500" data-cost="5000">Overwatch 500 (5,000 points)</option>
-                        <option value="Roblox 400" data-cost="6500">Roblox 400 (6,500 points)</option>
-                        <option value="Amazon Gift Card" data-cost="6500">Amazon Gift Card (6,500 points)</option>
-                        <option value="Plasma Wings" data-cost="10000">Plasma Wings (10,000 points)</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Redemption Date</label>
-                    <input type="date" id="redeem-date">
-                </div>
-                <div class="form-group">
-                    <label>Redeemed Code (Optional)</label>
-                    <input type="text" id="redeem-code" placeholder="Enter gift card code or link...">
-                </div>
-                <div class="form-group">
-                    <label>Status</label>
-                    <select id="redeem-status">
-                        <option value="unsold">Unsold</option>
-                        <option value="sold">Sold</option>
-                    </select>
-                </div>
-            </div>
-            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-                <button class="btn secondary-btn" id="whatsapp-btn" style="color: #25D366; border-color: #25D366;"><i class="fa-brands fa-whatsapp"></i> Share</button>
-                <button class="btn primary-btn" id="confirm-redeem-btn">Save to DB</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Bucket Modal -->
-    <div class="modal-overlay hidden" id="bucket-modal">
-        <div class="modal modal-lg">
-            <div class="modal-header">
-                <h3 id="bucket-modal-title">Accounts</h3>
-                <button class="icon-btn close-modal"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="modal-body table-container" style="padding: 0;">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Prof No.</th>
-                            <th>Email</th>
-                            <th>Server</th>
-                            <th>Points</th>
-                            <th>Redemptions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="bucket-body">
-                        <!-- JS -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Share Report Modal -->
-    <div class="modal-overlay hidden" id="share-report-modal">
-        <div class="modal modal-lg">
-            <div class="modal-header">
-                <h3>Share Report</h3>
-                <button class="icon-btn close-modal"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="modal-body">
-                <p class="text-secondary" style="font-size: 0.9rem; margin-bottom: 10px;">This report reflects the current filters applied on the Active Accounts table.</p>
-                <textarea id="report-text-area" rows="15" style="width: 100%; padding: 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; font-family: monospace; font-size: 0.85rem; resize: vertical;" readonly></textarea>
-            </div>
-            <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end;">
-                <button class="btn secondary-btn" id="copy-report-btn"><i class="fa-solid fa-copy"></i> Copy</button>
-                <button class="btn secondary-btn" id="email-report-btn" style="color: #ea4335; border-color: #ea4335;"><i class="fa-solid fa-envelope"></i> Email</button>
-                <button class="btn secondary-btn" id="whatsapp-report-btn" style="color: #25D366; border-color: #25D366;"><i class="fa-brands fa-whatsapp"></i> WhatsApp</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- WhatsApp User Modal (Add/Edit) -->
-    <div class="modal-overlay hidden" id="whatsapp-user-modal">
-        <div class="modal">
-            <div class="modal-header">
-                <h3 id="wa-modal-title"><i class="fa-brands fa-whatsapp" style="color: #25D366;"></i> Add Authorized Number</h3>
-                <button class="icon-btn close-modal"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="wa-user-id">
-                
-                <div class="form-group">
-                    <label>Full Name / Label *</label>
-                    <input type="text" id="wa-user-name" placeholder="e.g. John Doe (Operator)" required>
-                </div>
-
-                <div class="form-group">
-                    <label>WhatsApp Phone Number * <span class="text-secondary" style="font-size: 0.8rem;">(Include Country Code)</span></label>
-                    <input type="text" id="wa-user-phone" placeholder="e.g. 919876543210 or 15551234567" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Permissions</label>
-                    <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.3rem;">
-                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
-                            <input type="checkbox" id="wa-perm-points-update" checked style="width: auto;">
-                            <span><strong>points_update</strong> <span class="text-secondary">(Can modify points like P2 +500, P2 5000)</span></span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
-                            <input type="checkbox" id="wa-perm-view-points" checked style="width: auto;">
-                            <span><strong>view_points</strong> <span class="text-secondary">(Can lookup profile points & info)</span></span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
-                    <input type="checkbox" id="wa-user-is-active" checked style="width: auto;">
-                    <label for="wa-user-is-active" style="margin: 0; cursor: pointer;"><strong>Active</strong> (Allow immediate bot access)</label>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn primary-btn" id="btn-save-wa-user">Save Authorized Number</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Lock Screen -->
-    <div id="lock-screen" class="lock-screen hidden">
-        <div class="lock-box">
-            <i class="fa-solid fa-lock lock-icon"></i>
-            <h2 style="margin-bottom: 0.5rem;">Session Locked</h2>
-            <p class="text-secondary" style="font-size: 0.9rem;">Enter PIN to unlock (Demo: 0000)</p>
-            <div class="pin-inputs">
-                <input type="password" maxlength="1" class="pin-box" id="pin1" autocomplete="off">
-                <input type="password" maxlength="1" class="pin-box" id="pin2" autocomplete="off">
-                <input type="password" maxlength="1" class="pin-box" id="pin3" autocomplete="off">
-                <input type="password" maxlength="1" class="pin-box" id="pin4" autocomplete="off">
-            </div>
-            <p id="lock-error" style="color: var(--danger-color); font-size: 0.85rem; margin-top: 1rem;" class="hidden">Incorrect PIN</p>
-        </div>
-    </div>
-
-    <!-- Toast -->
-    <div id="toast" class="toast hidden">
-        <i class="fa-solid fa-circle-check"></i>
-        <div style="display: flex; flex-direction: column;">
-            <strong id="toast-title" style="font-size: 0.95rem; margin-bottom: 2px;">Success!</strong>
-            <span id="toast-message" style="font-size: 0.85rem;">Action completed.</span>
-        </div>
-    </div>
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="toast-container" id="toast-container"></div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>

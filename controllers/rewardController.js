@@ -1,194 +1,251 @@
 const supabase = require('../db/supabase');
+const { get, run, all } = require('../db/database');
 
 let io;
 const setIo = (socketIoInstance) => {
     io = socketIoInstance;
 };
 
+// Get published reward catalogue for current user (filtered by administrator visibility setting)
+const getUserRewards = async (req, res) => {
+    const user = req.user;
+    try {
+        // Admin gets the complete catalogue
+        if (user.role === 'admin') {
+            const allRewards = await all(`SELECT * FROM rewards_catalog ORDER BY sort_order ASC, id ASC`);
+            return res.json(allRewards);
+        }
+
+        // Check user visibility setting (Option A: all, Option B: selected)
+        const visibility = await get(`SELECT * FROM user_reward_visibility WHERE user_id = ?`, [user.id]);
+        
+        let rewardsQuery = `SELECT * FROM rewards_catalog WHERE is_published = 1`;
+        let params = [];
+
+        if (visibility && visibility.mode === 'selected') {
+            const selectedIds = JSON.parse(visibility.selected_reward_ids || '[]');
+            if (selectedIds.length === 0) {
+                return res.json([]);
+            }
+            const placeholders = selectedIds.map(() => '?').join(',');
+            rewardsQuery += ` AND id IN (${placeholders})`;
+            params = selectedIds;
+        }
+
+        rewardsQuery += ` ORDER BY sort_order ASC, id ASC`;
+        const publishedRewards = await all(rewardsQuery, params);
+        res.json(publishedRewards);
+
+    } catch (error) {
+        console.error('Get User Rewards Error:', error);
+        res.status(500).json({ error: 'Error fetching reward catalogue' });
+    }
+};
+
+// Get user accounts matching reward threshold & approaching eligibility
+const getAccountMatchesForReward = async (req, res) => {
+    const rewardId = req.params.rewardId;
+    const user = req.user;
+
+    try {
+        const reward = await get(`SELECT * FROM rewards_catalog WHERE id = ?`, [rewardId]);
+        if (!reward) return res.status(404).json({ error: 'Reward item not found' });
+
+        // Query accounts from Supabase & metadata
+        const { data: allAccounts } = await supabase.from('Users').select('id, profile_no, email, server, status');
+        const metaRows = await all(`SELECT account_id, user_id, classification FROM account_metadata`);
+        const metaMap = new Map();
+        metaRows.forEach(m => metaMap.set(m.account_id, m));
+
+        let accounts = (allAccounts || []).map(a => {
+            const m = metaMap.get(a.id);
+            return {
+                ...a,
+                user_id: m ? m.user_id : 1,
+                classification: m ? m.classification : 'new'
+            };
+        });
+
+        if (user.role !== 'admin') {
+            accounts = accounts.filter(a => a.user_id == user.id);
+        } else if (req.query.userId) {
+            accounts = accounts.filter(a => a.user_id == req.query.userId);
+        }
+        if (!accounts || accounts.length === 0) {
+            return res.json({ reward, eligible: [], approaching: [] });
+        }
+
+        const accountIds = accounts.map(a => a.id);
+        const { data: points } = await supabase.from('Points').select('user_id, points').in('user_id', accountIds).order('id', { ascending: false });
+
+        const latestPoints = new Map();
+        (points || []).forEach(p => {
+            if (!latestPoints.has(p.user_id)) latestPoints.set(p.user_id, p.points);
+        });
+
+        const threshold = reward.points_required;
+        const eligible = [];
+        const approaching = [];
+
+        accounts.forEach(a => {
+            const pts = latestPoints.get(a.id) || 0;
+            const diff = pts - threshold;
+
+            const item = {
+                id: a.id,
+                profileNo: a.profile_no,
+                email: a.email,
+                server: a.server,
+                status: a.status,
+                classification: a.classification,
+                currentPoints: pts,
+                pointsAbove: diff >= 0 ? diff : 0,
+                remainingPoints: diff < 0 ? Math.abs(diff) : 0
+            };
+
+            if (pts >= threshold) {
+                eligible.push(item);
+            } else if (pts >= threshold - 1500) {
+                approaching.push(item);
+            }
+        });
+
+        res.json({
+            reward,
+            threshold,
+            eligibleCount: eligible.length,
+            approachingCount: approaching.length,
+            eligible,
+            approaching
+        });
+
+    } catch (error) {
+        console.error('Match Reward Accounts Error:', error);
+        res.status(500).json({ error: 'Error calculating reward matches' });
+    }
+};
+
+// Redeem Item (Admin or approved user request)
 const redeemItem = async (req, res) => {
-    const userId = req.params.id;
-    const adminId = req.user.admin_id;
+    const user = req.user;
+    const accountId = req.params.accountId;
     const { item_name, points_cost, redeemed_at, redeemed_code, code_status } = req.body;
 
-    if (!item_name || !points_cost || !redeemed_at) {
-        return res.status(400).json({ error: 'Missing redemption details' });
+    if (!item_name || !points_cost) {
+        return res.status(400).json({ error: 'Missing redemption item details' });
     }
 
     try {
-        // Verify user belongs to admin
-        const { data: user, error: userError } = await supabase
+        const { data: account, error: accErr } = await supabase
             .from('Users')
-            .select('id, email')
-            .eq('id', userId)
-            .eq('admin_id', adminId)
+            .select('id, user_id, email, profile_no')
+            .eq('id', accountId)
             .single();
 
-        if (userError || !user) {
-            return res.status(404).json({ error: 'Account not found' });
+        if (accErr || !account) return res.status(404).json({ error: 'Account not found' });
+
+        if (user.role !== 'admin' && account.user_id !== user.id) {
+            return res.status(403).json({ error: 'Access denied. You do not own this account.' });
         }
 
-        const now = new Date().toISOString();
-        
-        // Insert Redemption
-        const { error: redemptionError } = await supabase
-            .from('Redemptions')
-            .insert([{ 
-                user_id: userId, 
-                item_name, 
-                points_cost, 
-                redeemed_at,
-                redeemed_code: redeemed_code || null, 
-                code_status: code_status || 'unsold' 
-            }]);
-            
-        if (redemptionError) throw redemptionError;
-        
+        const now = redeemed_at || new Date().toISOString();
 
-        
-        // Socket.io notification
+        // Insert into Supabase Redemptions
+        const { data: newRedemp, error: redempErr } = await supabase
+            .from('Redemptions')
+            .insert([{
+                user_id: accountId,
+                item_name,
+                points_cost: parseInt(points_cost),
+                redeemed_at: now,
+                redeemed_code: redeemed_code || null,
+                code_status: code_status || 'unsold'
+            }])
+            .select()
+            .single();
+
+        if (redempErr) throw redempErr;
+
+        // Auto reclassify account to 'old' if it was 'new'
+        await supabase.from('Users').update({ classification: 'old' }).eq('id', accountId);
+
+        // Audit Log
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, record_id, result)
+             VALUES (?, ?, ?, ?, 'Redeemed Reward Item', ?, ?, 'success')`,
+            [user.id, user.email, user.role, account.user_id, JSON.stringify({ item_name, points_cost }), String(accountId)]
+        );
+
         if (io) {
-            io.to(adminId.toString()).emit('notification', {
+            io.emit('notification', {
                 title: 'Reward Redeemed',
-                message: `🎁 ${user.email} successfully redeemed ${item_name}!`,
+                message: `🎁 ${account.email} redeemed ${item_name} (${points_cost} pts)!`,
                 type: 'success'
             });
         }
 
-        res.json({ success: true });
+        res.json({ success: true, redemption: newRedemp });
+
     } catch (error) {
-        console.error("Redeem Error:", error);
-        res.status(500).json({ error: 'Error saving redemption' });
+        console.error('Redeem Error:', error);
+        res.status(500).json({ error: 'Error processing redemption' });
     }
 };
 
-const getInventory = async (req, res) => {
-    const adminId = req.user.admin_id;
+// Get redemption history (Separated by user)
+const getRedemptions = async (req, res) => {
+    const user = req.user;
     try {
-        const { data: users, error: userError } = await supabase
-            .from('Users')
-            .select('id, email, profile_no')
-            .eq('admin_id', adminId);
+        const { data: allAccounts } = await supabase.from('Users').select('id, email, profile_no');
+        const metaRows = await all(`SELECT account_id, user_id, classification FROM account_metadata`);
+        const metaMap = new Map();
+        metaRows.forEach(m => metaMap.set(m.account_id, m));
 
-        if (userError) throw userError;
-        if (!users || users.length === 0) return res.json([]);
-
-        const userIds = users.map(u => u.id);
-        const { data: redemptions, error: redempError } = await supabase
-            .from('Redemptions')
-            .select('*')
-            .in('user_id', userIds)
-            .order('redeemed_at', { ascending: false });
-
-        if (redempError) throw redempError;
-
-        const result = redemptions.map(r => {
-            const user = users.find(u => u.id === r.user_id);
+        let accounts = (allAccounts || []).map(a => {
+            const m = metaMap.get(a.id);
             return {
-                ...r,
-                email: user ? user.email : 'Unknown',
-                profile_no: user ? user.profile_no : null
+                ...a,
+                user_id: m ? m.user_id : 1
             };
         });
 
-        res.json(result);
-    } catch (error) {
-        console.error("Get Inventory Error:", error);
-        res.status(500).json({ error: 'Error fetching inventory' });
-    }
-};
-
-const updateRedemption = async (req, res) => {
-    const redemptionId = req.params.id;
-    const adminId = req.user.admin_id;
-    const { redeemed_code, code_status } = req.body;
-
-    try {
-        // Verify ownership indirectly by fetching the redemption and checking user's admin_id
-        const { data: redemption } = await supabase
-            .from('Redemptions')
-            .select('user_id')
-            .eq('id', redemptionId)
-            .single();
-
-        if (!redemption) return res.status(404).json({ error: 'Redemption not found' });
-
-        const { data: user } = await supabase
-            .from('Users')
-            .select('id')
-            .eq('id', redemption.user_id)
-            .eq('admin_id', adminId)
-            .single();
-
-        if (!user) return res.status(403).json({ error: 'Unauthorized' });
-
-        const updates = {};
-        if (redeemed_code !== undefined) updates.redeemed_code = redeemed_code;
-        if (code_status !== undefined) updates.code_status = code_status;
-
-        const { error: updateError } = await supabase
-            .from('Redemptions')
-            .update(updates)
-            .eq('id', redemptionId);
-
-        if (updateError) throw updateError;
-
-        res.json({ success: true });
-    } catch (error) {
-        console.error("Update Redemption Error:", error);
-        res.status(500).json({ error: 'Error updating redemption' });
-    }
-};
-
-const deleteRedemption = async (req, res) => {
-    const redemptionId = req.params.id;
-    const adminId = req.user.admin_id;
-
-    try {
-        const { data: redemption } = await supabase
-            .from('Redemptions')
-            .select('user_id, points_cost, item_name')
-            .eq('id', redemptionId)
-            .single();
-
-        if (!redemption) return res.status(404).json({ error: 'Redemption not found' });
-
-        const { data: user } = await supabase
-            .from('Users')
-            .select('id, email')
-            .eq('id', redemption.user_id)
-            .eq('admin_id', adminId)
-            .single();
-
-        if (!user) return res.status(403).json({ error: 'Unauthorized' });
-
-        const { error: deleteError } = await supabase
-            .from('Redemptions')
-            .delete()
-            .eq('id', redemptionId);
-
-        if (deleteError) throw deleteError;
-
-
-
-        if (io) {
-            io.to(adminId.toString()).emit('notification', {
-                title: 'Redemption Deleted',
-                message: `Deleted redemption ${redemption.item_name} for ${user.email}`,
-                type: 'info'
-            });
+        if (user.role !== 'admin') {
+            accounts = accounts.filter(a => a.user_id == user.id);
+        } else if (req.query.userId) {
+            accounts = accounts.filter(a => a.user_id == req.query.userId);
         }
+        if (!accounts || accounts.length === 0) return res.json([]);
 
-        res.json({ success: true });
+        const accountIds = accounts.map(a => a.id);
+        const { data: redemptions, error: redErr } = await supabase
+            .from('Redemptions')
+            .select('*')
+            .in('user_id', accountIds)
+            .order('redeemed_at', { ascending: false });
+
+        if (redErr) throw redErr;
+
+        const results = (redemptions || []).map(r => {
+            const acc = accounts.find(a => a.id === r.user_id);
+            return {
+                ...r,
+                email: acc ? acc.email : 'Unknown',
+                profile_no: acc ? acc.profile_no : null,
+                user_id: acc ? acc.user_id : null
+            };
+        });
+
+        res.json(results);
     } catch (error) {
-        console.error("Delete Redemption Error:", error);
-        res.status(500).json({ error: 'Error deleting redemption' });
+        console.error('Get Redemptions Error:', error);
+        res.status(500).json({ error: 'Error fetching redemption history' });
     }
 };
 
 module.exports = {
     setIo,
+    getUserRewards,
+    getAccountMatchesForReward,
     redeemItem,
-    getInventory,
-    updateRedemption,
-    deleteRedemption
+    getRedemptions
 };

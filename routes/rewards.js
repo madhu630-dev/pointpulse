@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
-
-const { authenticateToken, requireAdmin } = require('../middleware/authMiddleware');
 const rewardController = require('../controllers/rewardController');
+const { authenticateToken, requirePermission } = require('../middleware/authMiddleware');
 
-router.post('/:id/redeem', authenticateToken, requireAdmin, rewardController.redeemItem);
-router.get('/inventory', authenticateToken, requireAdmin, rewardController.getInventory);
-router.put('/inventory/:id', authenticateToken, requireAdmin, rewardController.updateRedemption);
-router.delete('/inventory/:id', authenticateToken, requireAdmin, rewardController.deleteRedemption);
+router.get('/', authenticateToken, requirePermission('view_redemption'), rewardController.getUserRewards);
+router.get('/matches/:rewardId', authenticateToken, requirePermission('view_redemption'), rewardController.getAccountMatchesForReward);
+router.post('/:accountId/redeem', authenticateToken, rewardController.redeemItem);
+router.get('/history', authenticateToken, requirePermission('view_redemption'), rewardController.getRedemptions);
 
 module.exports = router;

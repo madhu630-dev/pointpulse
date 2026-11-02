@@ -1,16 +1,360 @@
 const fs = require('fs');
 const xlsx = require('xlsx');
-const supabase = require('../db/supabase');
 const { Parser } = require('json2csv');
 const PDFDocument = require('pdfkit-table');
+const supabase = require('../db/supabase');
+const { run, get, all } = require('../db/database');
 
 let io;
 const setIo = (socketIoInstance) => {
     io = socketIoInstance;
 };
 
+// Get accounts with role-based isolation & granular permissions
+const getAccounts = async (req, res) => {
+    const user = req.user;
+    const requestedUserId = req.query.userId;
+
+    try {
+        // Query accounts from Supabase
+        const { data: accounts, error: accError } = await supabase
+            .from('Users')
+            .select('id, profile_no, email, server, proton_email, status, notes, is_pinned, alternative_email, admin_id')
+            .order('profile_no', { ascending: true });
+
+        if (accError) throw accError;
+        if (!accounts || accounts.length === 0) return res.json([]);
+
+        // Fetch account metadata (user_id assignments & classifications)
+        const metaRows = await all(`SELECT account_id, user_id, classification FROM account_metadata`);
+        const metaMap = new Map();
+        metaRows.forEach(m => metaMap.set(m.account_id, m));
+
+        const accountIds = accounts.map(a => a.id);
+
+        // Fetch Points & Redemptions
+        const { data: points } = await supabase
+            .from('Points')
+            .select('*')
+            .in('user_id', accountIds)
+            .order('id', { ascending: true });
+
+        const { data: redemptions } = await supabase
+            .from('Redemptions')
+            .select('*')
+            .in('user_id', accountIds)
+            .order('redeemed_at', { ascending: false });
+
+        const redemptionsByAccount = {};
+        if (redemptions) {
+            redemptions.forEach(r => {
+                if (!redemptionsByAccount[r.user_id]) redemptionsByAccount[r.user_id] = [];
+                redemptionsByAccount[r.user_id].push(r);
+            });
+        }
+
+        const latestPointsByAccount = {};
+        const pointsHistoryByAccount = {};
+
+        if (points) {
+            points.forEach(p => {
+                latestPointsByAccount[p.user_id] = p;
+
+                if (!pointsHistoryByAccount[p.user_id]) {
+                    pointsHistoryByAccount[p.user_id] = { prev: null, history: [] };
+                }
+
+                const prev = pointsHistoryByAccount[p.user_id].prev;
+                if (prev !== null) {
+                    const diff = p.points - prev;
+                    pointsHistoryByAccount[p.user_id].history.push({
+                        diff,
+                        prev_points: prev,
+                        new_points: p.points,
+                        date: p.date,
+                        updated_at: p.updated_at
+                    });
+                }
+                pointsHistoryByAccount[p.user_id].prev = p.points;
+            });
+        }
+
+        // Enrich accounts
+        const enriched = accounts.map(acc => {
+            const lp = latestPointsByAccount[acc.id];
+            const history = pointsHistoryByAccount[acc.id] ? pointsHistoryByAccount[acc.id].history.slice(-10) : [];
+            const accRedemptions = redemptionsByAccount[acc.id] || [];
+
+            const meta = metaMap.get(acc.id);
+            const assignedUserId = meta ? meta.user_id : (acc.admin_id || 1);
+            let classification = meta ? meta.classification : null;
+            if (!classification) {
+                classification = accRedemptions.length > 0 ? 'old' : 'new';
+            }
+
+            return {
+                id: acc.id,
+                profile_no: acc.profile_no,
+                email: acc.email,
+                server: acc.server,
+                proton_email: acc.proton_email,
+                status: acc.status || 'active',
+                classification: classification,
+                current_points: lp ? lp.points : 0,
+                last_updated: lp ? lp.updated_at : null,
+                notes: acc.notes || '',
+                is_pinned: acc.is_pinned || false,
+                alternative_email: acc.alternative_email || '',
+                user_id: assignedUserId,
+                total_redemptions: accRedemptions.length,
+                redemptions: accRedemptions,
+                points_history: history
+            };
+        });
+
+        // Strict isolation boundary
+        let filtered = enriched;
+        if (user.role === 'admin') {
+            if (requestedUserId) {
+                filtered = enriched.filter(a => a.user_id == requestedUserId);
+            }
+        } else {
+            filtered = enriched.filter(a => a.user_id == user.id);
+        }
+
+        res.json(filtered);
+
+    } catch (error) {
+        console.error('Fetch Accounts Error:', error);
+        res.status(500).json({ error: 'Error fetching accounts' });
+    }
+};
+
+// Create Account (Admin or user with add_accounts permission)
+const createAccount = async (req, res) => {
+    const user = req.user;
+    const { profile_no, email, server, proton_email, status, notes, alternative_email, initial_points, classification } = req.body;
+
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    try {
+        let assignedUserId = user.id;
+        if (user.role === 'admin' && req.body.user_id) {
+            assignedUserId = req.body.user_id;
+        }
+
+        // Determine profile number
+        let finalProfileNo = profile_no ? parseInt(profile_no) : null;
+        if (!finalProfileNo) {
+            const { data: maxRow } = await supabase
+                .from('Users')
+                .select('profile_no')
+                .order('profile_no', { ascending: false })
+                .limit(1);
+            finalProfileNo = (maxRow && maxRow[0] && maxRow[0].profile_no) ? maxRow[0].profile_no + 1 : 1;
+        }
+
+        const now = new Date().toISOString();
+        
+        // Insert with columns supported by Supabase Users table
+        const insertPayload = {
+            admin_id: 1,
+            email,
+            server: server || '',
+            proton_email: proton_email || '',
+            profile_no: finalProfileNo,
+            status: status || 'active',
+            notes: notes || '',
+            alternative_email: alternative_email || ''
+        };
+
+        const { data: newAcc, error: insertError } = await supabase
+            .from('Users')
+            .insert([insertPayload])
+            .select()
+            .single();
+
+        if (insertError) throw insertError;
+
+        // Store metadata (user_id and classification)
+        const finalClass = classification || 'new';
+        await run(
+            `INSERT OR REPLACE INTO account_metadata (account_id, user_id, classification, updated_at)
+             VALUES (?, ?, ?, datetime('now'))`,
+            [newAcc.id, assignedUserId, finalClass]
+        );
+
+        // Insert initial points if provided
+        if (initial_points !== undefined && initial_points !== null) {
+            await supabase.from('Points').insert([{
+                user_id: newAcc.id,
+                points: parseInt(initial_points) || 0,
+                date: 'Initial Setup',
+                updated_at: now
+            }]);
+
+            // Audit log
+            await run(
+                `INSERT INTO points_audit_log (account_id, user_id, previous_points, new_points, difference, updated_by, updated_by_name, source)
+                 VALUES (?, ?, 0, ?, ?, ?, ?, 'web_creation')`,
+                [newAcc.id, assignedUserId, parseInt(initial_points), parseInt(initial_points), user.id, user.name]
+            );
+        }
+
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, record_id, result)
+             VALUES (?, ?, ?, ?, 'Created Account Profile', ?, ?, 'success')`,
+            [user.id, user.email, user.role, assignedUserId, JSON.stringify({ email, profile_no: finalProfileNo }), String(newAcc.id)]
+        );
+
+        res.json({
+            success: true,
+            account: {
+                ...newAcc,
+                user_id: assignedUserId,
+                classification: finalClass
+            }
+        });
+    } catch (error) {
+        console.error('Create Account Error:', error);
+        res.status(500).json({ error: 'Error creating account' });
+    }
+};
+
+// Update Account Details (Admin or user with edit_accounts permission)
+const updateAccount = async (req, res) => {
+    const accountId = req.params.id;
+    const user = req.user;
+    const { profile_no, email, server, status, notes, is_pinned, proton_email, alternative_email, classification } = req.body;
+
+    try {
+        const { data: existing, error: findErr } = await supabase
+            .from('Users')
+            .select('*')
+            .eq('id', accountId)
+            .single();
+
+        if (findErr || !existing) return res.status(404).json({ error: 'Account not found' });
+
+        // Check ownership from account_metadata
+        const meta = await get(`SELECT user_id, classification FROM account_metadata WHERE account_id = ?`, [accountId]);
+        const ownerId = meta ? meta.user_id : (existing.admin_id || 1);
+
+        if (user.role !== 'admin' && ownerId !== user.id) {
+            return res.status(403).json({ error: 'Access denied. You do not own this account.' });
+        }
+
+        const updates = {};
+        if (profile_no !== undefined) updates.profile_no = profile_no;
+        if (email) updates.email = email;
+        if (server !== undefined) updates.server = server;
+        if (status) updates.status = status;
+        if (notes !== undefined) updates.notes = notes;
+        if (is_pinned !== undefined) updates.is_pinned = is_pinned;
+        if (proton_email !== undefined) updates.proton_email = proton_email;
+        if (alternative_email !== undefined) updates.alternative_email = alternative_email;
+
+        if (Object.keys(updates).length > 0) {
+            await supabase.from('Users').update(updates).eq('id', accountId);
+        }
+
+        // Only admin can reclassify directly
+        if (classification && user.role === 'admin') {
+            await run(
+                `INSERT INTO account_metadata (account_id, user_id, classification, updated_at)
+                 VALUES (?, ?, ?, datetime('now'))
+                 ON CONFLICT(account_id) DO UPDATE SET classification = excluded.classification, updated_at = datetime('now')`,
+                [accountId, ownerId, classification]
+            );
+        }
+
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, action, previous_value, new_value, record_id, result)
+             VALUES (?, ?, ?, 'Updated Account Details', ?, ?, ?, 'success')`,
+            [user.id, user.email, user.role, JSON.stringify(existing), JSON.stringify(updates), String(accountId)]
+        );
+
+        res.json({ success: true, message: 'Account updated successfully' });
+    } catch (error) {
+        console.error('Update Account Error:', error);
+        res.status(500).json({ error: 'Error updating account' });
+    }
+};
+
+// Update Points for an Account (Restricted by update_points permission or temp window)
+const updatePoints = async (req, res) => {
+    const accountId = req.params.id;
+    const user = req.user;
+    const { points, reason } = req.body;
+
+    if (points === undefined || points === null) {
+        return res.status(400).json({ error: 'Points value required' });
+    }
+
+    try {
+        const { data: account, error: accErr } = await supabase
+            .from('Users')
+            .select('id, admin_id, email, profile_no')
+            .eq('id', accountId)
+            .single();
+
+        if (accErr || !account) return res.status(404).json({ error: 'Account not found' });
+
+        const meta = await get(`SELECT user_id FROM account_metadata WHERE account_id = ?`, [accountId]);
+        const ownerId = meta ? meta.user_id : (account.admin_id || 1);
+
+        if (user.role !== 'admin' && ownerId !== user.id) {
+            return res.status(403).json({ error: 'Access denied. You do not own this account.' });
+        }
+
+        const { data: lastPointRow } = await supabase
+            .from('Points')
+            .select('points')
+            .eq('user_id', accountId)
+            .order('id', { ascending: false })
+            .limit(1);
+
+        const prevPoints = (lastPointRow && lastPointRow.length > 0) ? lastPointRow[0].points : 0;
+        const newPointsVal = parseInt(points);
+        const diff = newPointsVal - prevPoints;
+        const now = new Date().toISOString();
+
+        await supabase.from('Points').insert([{
+            user_id: accountId,
+            points: newPointsVal,
+            date: reason || 'Manual Point Update',
+            updated_at: now
+        }]);
+
+        await run(
+            `INSERT INTO points_audit_log (account_id, user_id, previous_points, new_points, difference, updated_by, updated_by_name, source, auth_ref)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'web_direct', ?)`,
+            [accountId, ownerId, prevPoints, newPointsVal, diff, user.id, user.name, reason || 'Web Update']
+        );
+
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, previous_value, new_value, record_id, result)
+             VALUES (?, ?, ?, ?, 'Updated Account Points', ?, ?, ?, 'success')`,
+            [user.id, user.email, user.role, ownerId, JSON.stringify({ points: prevPoints }), JSON.stringify({ points: newPointsVal, diff }), String(accountId)]
+        );
+
+        res.json({
+            success: true,
+            accountId,
+            previousPoints: prevPoints,
+            newPoints: newPointsVal,
+            difference: diff
+        });
+
+    } catch (error) {
+        console.error('Update Points Error:', error);
+        res.status(500).json({ error: 'Error updating points' });
+    }
+};
+
+// Excel Upload (Admin or user with import_excel permission)
 const uploadExcel = async (req, res) => {
-    const adminId = req.user.admin_id;
+    const user = req.user;
     const isFresh = req.body.freshUpload === 'true';
 
     try {
@@ -28,712 +372,171 @@ const uploadExcel = async (req, res) => {
         const serverCol = keys.find(k => k.toLowerCase().includes('server'));
         const profileCol = keys.find(k => k.toLowerCase().includes('profile'));
         const statusCol = keys.find(k => k.toLowerCase().includes('status') || k.toLowerCase().includes('ban'));
-        const passwordCol = keys.find(k => k.toLowerCase().includes('password'));
         const altEmailCol = keys.find(k => k.toLowerCase().includes('alt') && k.toLowerCase().includes('email'));
         const pointsCols = keys.filter(k => k.toLowerCase().startsWith('points_') || (!isNaN(Date.parse(k)) && k.includes('-')));
 
+        const targetUserId = (user.role === 'admin' && req.body.targetUserId) ? parseInt(req.body.targetUserId) : user.id;
+
         if (isFresh) {
-            const { data: users } = await supabase.from('Users').select('id').eq('admin_id', adminId);
-            if (users && users.length > 0) {
-                const userIds = users.map(u => u.id);
-                await supabase.from('Redemptions').delete().in('user_id', userIds);
-                await supabase.from('Points').delete().in('user_id', userIds);
-                await supabase.from('Users').delete().eq('admin_id', adminId);
+            const userMetaRows = await all(`SELECT account_id FROM account_metadata WHERE user_id = ?`, [targetUserId]);
+            if (userMetaRows && userMetaRows.length > 0) {
+                const accIds = userMetaRows.map(u => u.account_id);
+                await supabase.from('Redemptions').delete().in('user_id', accIds);
+                await supabase.from('Points').delete().in('user_id', accIds);
+                await supabase.from('Users').delete().in('id', accIds);
+                await run(`DELETE FROM account_metadata WHERE user_id = ?`, [targetUserId]);
             }
         }
 
         const { data: maxProfileNoRow } = await supabase
             .from('Users')
             .select('profile_no')
-            .eq('admin_id', adminId)
             .order('profile_no', { ascending: false })
             .limit(1);
-            
+
         let currentMaxProfileNo = (maxProfileNoRow && maxProfileNoRow.length > 0 && maxProfileNoRow[0].profile_no) ? maxProfileNoRow[0].profile_no : 0;
+        let syncedCount = 0;
 
         for (const row of data) {
             const email = row[emailCol];
             if (!email) continue;
-            
-            const server = serverCol ? row[serverCol] : '';
-            const protonEmail = protonCol ? row[protonCol] : '';
-            const password = passwordCol ? row[passwordCol] : '';
-            const altEmail = altEmailCol ? row[altEmailCol] : '';
+
+            const server = serverCol ? (row[serverCol] || '') : '';
+            const protonEmail = protonCol ? (row[protonCol] || '') : '';
+            const altEmail = altEmailCol ? (row[altEmailCol] || '') : '';
             let profileNo = profileCol ? row[profileCol] : null;
             if (profileNo) profileNo = parseInt(profileNo.toString().replace(/\D/g, '')) || null;
-            
+
             let status = 'active';
             if (statusCol && row[statusCol] && row[statusCol].toString().toLowerCase().includes('ban')) {
                 status = 'banned';
             }
 
-            const { data: existingUser } = await supabase
+            const { data: existingAccount } = await supabase
                 .from('Users')
                 .select('id, profile_no')
                 .eq('email', email)
-                .eq('admin_id', adminId)
                 .single();
 
-            let userId;
-
-            if (existingUser) {
-                userId = existingUser.id;
-                profileNo = profileNo || existingUser.profile_no;
-                
-                await supabase.from('Users').update({ 
-                    server, proton_email: protonEmail, profile_no: profileNo, status, password, alternative_email: altEmail
-                }).eq('id', userId);
+            let accountId;
+            if (existingAccount) {
+                accountId = existingAccount.id;
+                profileNo = profileNo || existingAccount.profile_no;
+                await supabase.from('Users').update({
+                    server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail
+                }).eq('id', accountId);
             } else {
                 if (!profileNo) {
                     currentMaxProfileNo++;
                     profileNo = currentMaxProfileNo;
-                } else {
-                    if (profileNo > currentMaxProfileNo) currentMaxProfileNo = profileNo;
+                } else if (profileNo > currentMaxProfileNo) {
+                    currentMaxProfileNo = profileNo;
                 }
 
-                const { data: newUser, error: insertError } = await supabase.from('Users').insert([{
-                    admin_id: adminId, email, server, proton_email: protonEmail, profile_no: profileNo, status, password, alternative_email: altEmail
+                const { data: newAcc, error: insertError } = await supabase.from('Users').insert([{
+                    admin_id: 1, email, server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail
                 }]).select('id').single();
 
                 if (insertError) continue;
-                userId = newUser.id;
+                accountId = newAcc.id;
             }
 
+            // Assign metadata
+            await run(
+                `INSERT OR REPLACE INTO account_metadata (account_id, user_id, classification, updated_at)
+                 VALUES (?, ?, 'new', datetime('now'))`,
+                [accountId, targetUserId]
+            );
+
+            syncedCount++;
+
+            // Process Points Columns
             for (const pCol of pointsCols) {
-                let dateStr = pCol;
-                if (pCol.toLowerCase().startsWith('points_')) {
-                    dateStr = pCol.substring(7);
-                }
-                const pointsVal = row[pCol] || 0;
-                const now = new Date().toISOString();
-
-                await supabase.from('Points').upsert({
-                    user_id: userId, date: dateStr, points: pointsVal, updated_at: now
-                }, { onConflict: 'user_id,date' });
-            }
-        }
-
-        fs.unlinkSync(req.file.path);
-        res.json({ message: 'File processed successfully' });
-    } catch (error) {
-        console.error("Upload Error:", error);
-        res.status(500).json({ error: 'Error processing file' });
-    }
-};
-
-const getAccounts = async (req, res) => {
-    const adminId = req.user.admin_id;
-    try {
-        const { data: users, error: userError } = await supabase
-            .from('Users')
-            .select('*')
-            .eq('admin_id', adminId)
-            .order('is_pinned', { ascending: false }) // Pinned items first
-            .order('profile_no', { ascending: true })
-            .order('id', { ascending: true });
-
-        if (userError) throw userError;
-        
-        if (!users || users.length === 0) {
-            return res.json([]);
-        }
-
-        const userIds = users.map(u => u.id);
-
-        const { data: redemptions, error: redempError } = await supabase
-            .from('Redemptions')
-            .select('*')
-            .in('user_id', userIds)
-            .order('redeemed_at', { ascending: false });
-
-        if (redempError) throw redempError;
-
-        const redemptionsByUser = {};
-        if (redemptions) {
-            redemptions.forEach(r => {
-                if (!redemptionsByUser[r.user_id]) redemptionsByUser[r.user_id] = [];
-                redemptionsByUser[r.user_id].push(r);
-            });
-        }
-
-        const { data: points, error: pointsError } = await supabase
-            .from('Points')
-            .select('*')
-            .in('user_id', userIds)
-            .order('updated_at', { ascending: true });
-            
-        if (pointsError) throw pointsError;
-
-        const latestPointsByUser = {};
-        const pointsHistoryByUser = {};
-
-        if (points) {
-            points.forEach(p => {
-                if (!latestPointsByUser[p.user_id] || p.id > latestPointsByUser[p.user_id].id) {
-                    latestPointsByUser[p.user_id] = p;
-                }
-
-                if (!pointsHistoryByUser[p.user_id]) {
-                    pointsHistoryByUser[p.user_id] = { prev: null, positiveUpdates: [] };
-                }
-                
-                const prev = pointsHistoryByUser[p.user_id].prev;
-                if (prev !== null) {
-                    const diff = p.points - prev;
-                    if (diff > 0) {
-                        pointsHistoryByUser[p.user_id].positiveUpdates.push({
-                            diff: diff,
-                            prev_points: prev,
-                            new_points: p.points,
-                            updated_at: p.updated_at
-                        });
-                    }
-                }
-                pointsHistoryByUser[p.user_id].prev = p.points;
-            });
-        }
-
-        const formattedAccounts = users.map(acc => {
-            const lp = latestPointsByUser[acc.id];
-            const history = pointsHistoryByUser[acc.id] ? pointsHistoryByUser[acc.id].positiveUpdates.slice(-10) : [];
-            return {
-                ...acc,
-                current_points: lp ? lp.points : 0,
-                last_updated: lp ? lp.updated_at : null,
-                redemptions: redemptionsByUser[acc.id] || [],
-                points_history: history
-            };
-        });
-
-        res.json(formattedAccounts);
-    } catch (error) {
-        console.error("Fetch Accounts Error:", error);
-        res.status(500).json({ error: 'Error fetching accounts' });
-    }
-};
-
-const updateAccount = async (req, res) => {
-    const userId = req.params.id;
-    const adminId = req.user.admin_id;
-    const { profile_no, email, server, status, points, notes, is_pinned, proton_email, password, alternative_email } = req.body;
-
-    try {
-        const { data: user, error: userError } = await supabase
-            .from('Users')
-            .select('id, email')
-            .eq('id', userId)
-            .eq('admin_id', adminId)
-            .single();
-
-        if (userError || !user) return res.status(404).json({ error: 'Account not found' });
-
-        if (profile_no !== undefined || email || server || status || notes !== undefined || is_pinned !== undefined || proton_email !== undefined || password !== undefined || alternative_email !== undefined) {
-            const updates = {};
-            if (profile_no !== undefined) updates.profile_no = profile_no;
-            if (email) updates.email = email;
-            if (server !== undefined) updates.server = server;
-            if (status) updates.status = status;
-            if (notes !== undefined) updates.notes = notes;
-            if (is_pinned !== undefined) updates.is_pinned = is_pinned;
-            if (proton_email !== undefined) updates.proton_email = proton_email;
-            if (password !== undefined) updates.password = password;
-            if (alternative_email !== undefined) updates.alternative_email = alternative_email;
-            
-            if (Object.keys(updates).length > 0) {
-                await supabase.from('Users').update(updates).eq('id', userId);
-                
-                if (status === 'banned' && io) {
-                    io.to(adminId.toString()).emit('notification', {
-                        title: 'Account Banned',
-                        message: `🚫 ${email || user.email} was marked as banned.`,
-                        type: 'danger'
+                const ptVal = parseInt(row[pCol]);
+                if (!isNaN(ptVal)) {
+                    await supabase.from('Points').upsert({
+                        user_id: accountId,
+                        date: pCol,
+                        points: ptVal,
+                        updated_at: new Date().toISOString()
                     });
                 }
             }
         }
 
-        if (points !== undefined) {
-            const now = new Date().toISOString();
-            const dateStr = `ManualUpdate_${Date.now()}`;
-            
-            await supabase.from('Points').insert([{
-                user_id: userId, date: dateStr, points: points, updated_at: now
-            }]);
-            
-            if (points >= 10000 && io) {
-                io.to(adminId.toString()).emit('notification', {
-                    title: 'Threshold Reached!',
-                    message: `🎉 ${email || user.email} reached 10K points!`,
-                    type: 'success'
-                });
-            } else if (points >= 5000 && io) {
-                io.to(adminId.toString()).emit('notification', {
-                    title: 'Ready to Redeem',
-                    message: `🎁 ${email || user.email} reached 5K points!`,
-                    type: 'info'
-                });
-            }
-        }
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
 
-        res.json({ success: true });
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, result)
+             VALUES (?, ?, ?, ?, 'Imported Excel Account Data', ?, 'success')`,
+            [user.id, user.email, user.role, targetUserId, JSON.stringify({ syncedCount, filename: req.file.originalname })]
+        );
+
+        res.json({ success: true, count: syncedCount });
     } catch (error) {
-        console.error("Update Account Error:", error);
-        res.status(500).json({ error: 'Error updating account' });
+        console.error('Upload Excel Error:', error);
+        res.status(500).json({ error: 'Error processing Excel upload' });
     }
 };
 
+// Export CSV (Strictly NO passwords)
 const exportCsv = async (req, res) => {
-    // We will reuse getAccounts logic internally, or just ask the client to fetch and we parse it
-    // But since it's a dedicated endpoint, we do a raw DB pull.
-    const adminId = req.user.admin_id;
+    const user = req.user;
     try {
-        const { data: users } = await supabase.from('Users').select('*').eq('admin_id', adminId).order('profile_no', { ascending: true });
-        if (!users) return res.status(404).send("No data");
+        const { data: accounts } = await supabase.from('Users').select('id, profile_no, email, server, status').order('profile_no', { ascending: true });
+        if (!accounts || accounts.length === 0) return res.status(404).send('No records found');
 
-        const { data: points } = await supabase.from('Points').select('*').in('user_id', users.map(u => u.id));
-        const latestPointsByUser = {};
-        if (points) {
-            points.forEach(p => {
-                if (!latestPointsByUser[p.user_id] || p.id > latestPointsByUser[p.user_id].id) {
-                    latestPointsByUser[p.user_id] = p;
-                }
+        const metaRows = await all(`SELECT account_id, user_id, classification FROM account_metadata`);
+        const metaMap = new Map();
+        metaRows.forEach(m => metaMap.set(m.account_id, m));
+
+        let filtered = accounts;
+        if (user.role !== 'admin') {
+            filtered = accounts.filter(a => {
+                const m = metaMap.get(a.id);
+                return m && m.user_id == user.id;
             });
         }
 
-        const exportData = users.map(acc => ({
-            Profile_No: acc.profile_no,
-            Email: acc.email,
-            Server: acc.server,
-            Status: acc.status,
-            Points: latestPointsByUser[acc.id] ? latestPointsByUser[acc.id].points : 0,
-            Notes: acc.notes || ''
-        }));
+        const accountIds = filtered.map(a => a.id);
+        const { data: points } = await supabase.from('Points').select('user_id, points').in('user_id', accountIds).order('id', { ascending: false });
 
-        const json2csvParser = new Parser();
-        const csv = json2csvParser.parse(exportData);
-        
+        const latestPoints = new Map();
+        (points || []).forEach(p => {
+            if (!latestPoints.has(p.user_id)) latestPoints.set(p.user_id, p.points);
+        });
+
+        const rows = filtered.map(a => {
+            const m = metaMap.get(a.id);
+            return {
+                'Profile No': a.profile_no || '',
+                'Email': a.email,
+                'Server': a.server || '',
+                'Status': a.status,
+                'Classification': (m ? m.classification : 'new').toUpperCase(),
+                'Current Points': latestPoints.get(a.id) || 0
+            };
+        });
+
+        const parser = new Parser();
+        const csv = parser.parse(rows);
+
         res.header('Content-Type', 'text/csv');
-        res.attachment('accounts_export.csv');
-        return res.send(csv);
+        res.attachment(`PointPulse_Accounts_${new Date().toISOString().slice(0, 10)}.csv`);
+        res.send(csv);
+
     } catch (error) {
-        res.status(500).json({ error: 'Error exporting CSV' });
-    }
-};
-
-const exportPdf = async (req, res) => {
-    const adminId = req.user.admin_id;
-    try {
-        const { data: users } = await supabase.from('Users').select('*').eq('admin_id', adminId).order('profile_no', { ascending: true });
-        if (!users) return res.status(404).send("No data");
-
-        const { data: points } = await supabase.from('Points').select('*').in('user_id', users.map(u => u.id));
-        const latestPointsByUser = {};
-        if (points) {
-            points.forEach(p => {
-                if (!latestPointsByUser[p.user_id] || p.id > latestPointsByUser[p.user_id].id) {
-                    latestPointsByUser[p.user_id] = p;
-                }
-            });
-        }
-
-        const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
-        res.setHeader('Content-disposition', 'attachment; filename=accounts_report.pdf');
-        res.setHeader('Content-type', 'application/pdf');
-        doc.pipe(res);
-
-        const table = {
-            title: "PointPulse Account Report",
-            headers: ["Prof No.", "Email", "Server", "Points", "Status"],
-            rows: users.map(acc => {
-                const pts = latestPointsByUser[acc.id] ? latestPointsByUser[acc.id].points : 0;
-                return [
-                    acc.profile_no ? String(acc.profile_no) : '-',
-                    acc.email || '-',
-                    acc.server || '-',
-                    String(pts),
-                    acc.status || '-'
-                ];
-            })
-        };
-
-        await doc.table(table, { 
-            prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
-            prepareRow: () => doc.font("Helvetica").fontSize(10)
-        });
-        
-        doc.end();
-    } catch (error) {
-        res.status(500).json({ error: 'Error exporting PDF' });
-    }
-};
-
-const exportAccountPdf = async (req, res) => {
-    const userId = req.params.id;
-    const adminId = req.user.admin_id;
-
-    try {
-        const { data: user } = await supabase.from('Users').select('*').eq('id', userId).eq('admin_id', adminId).single();
-        if (!user) return res.status(404).json({ error: 'Account not found' });
-
-        const { data: redemptions } = await supabase.from('Redemptions').select('*').eq('user_id', userId).order('redeemed_at', { ascending: false });
-
-        const doc = new PDFDocument({ margin: 40, size: 'A4' });
-        res.setHeader('Content-disposition', `attachment; filename=account_report_${user.profile_no || user.id}.pdf`);
-        res.setHeader('Content-type', 'application/pdf');
-        doc.pipe(res);
-
-        doc.fontSize(22).fillColor('#2c3e50').text('Account Analysis Report', { align: 'center' });
-        doc.moveDown(2);
-
-        doc.fontSize(16).fillColor('#34495e').text('Account Details');
-        doc.moveTo(40, doc.y).lineTo(550, doc.y).strokeColor('#bdc3c7').stroke();
-        doc.moveDown(1);
-
-        doc.fontSize(12).fillColor('#2c3e50');
-        doc.text(`Profile No.: ${user.profile_no || '-'}`);
-        doc.text(`Email: ${user.email || '-'}`);
-        doc.text(`Server: ${user.server || '-'}`);
-        doc.text(`Proton Mail: ${user.proton_email || '-'}`);
-        doc.text(`Password: ${user.password || '-'}`);
-        doc.text(`Alternative Mail: ${user.alternative_email || '-'}`);
-        doc.moveDown(2);
-
-        doc.fontSize(16).fillColor('#34495e').text('Redemption History');
-        doc.moveTo(40, doc.y).lineTo(550, doc.y).strokeColor('#bdc3c7').stroke();
-        doc.moveDown(1);
-
-        if (!redemptions || redemptions.length === 0) {
-            doc.fontSize(12).fillColor('#7f8c8d').text('No redemptions found for this account.');
-        } else {
-            redemptions.forEach((r, idx) => {
-                doc.fontSize(12).fillColor('#2c3e50').text(`${idx + 1}. Item: ${r.item_name}`);
-                doc.fontSize(10).fillColor('#7f8c8d');
-                doc.text(`   Date: ${r.redeemed_at.split('T')[0]}`);
-                doc.text(`   Code: ${r.redeemed_code || '-'}`);
-                doc.text(`   Status: ${r.code_status || 'unsold'}`);
-                doc.moveDown(0.5);
-            });
-        }
-
-        doc.end();
-    } catch (error) {
-        console.error("Export Account PDF Error:", error);
-        res.status(500).json({ error: 'Error generating PDF' });
-    }
-};
-
-const exportFilteredPdf = async (req, res) => {
-    const adminId = req.user.admin_id;
-    const { userIds } = req.body;
-
-    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-        return res.status(400).json({ error: 'No user IDs provided' });
-    }
-
-    try {
-        const { data: users } = await supabase
-            .from('Users')
-            .select('*')
-            .eq('admin_id', adminId)
-            .in('id', userIds)
-            .order('profile_no', { ascending: true });
-            
-        if (!users || users.length === 0) return res.status(404).send("No data");
-
-        const { data: points } = await supabase.from('Points').select('*').in('user_id', users.map(u => u.id));
-        const latestPointsByUser = {};
-        if (points) {
-            points.forEach(p => {
-                if (!latestPointsByUser[p.user_id] || p.id > latestPointsByUser[p.user_id].id) {
-                    latestPointsByUser[p.user_id] = p;
-                }
-            });
-        }
-
-        const { data: redemptions } = await supabase.from('Redemptions').select('*').in('user_id', users.map(u => u.id));
-        const redemptionsByUser = {};
-        if (redemptions) {
-            redemptions.forEach(r => {
-                if (!redemptionsByUser[r.user_id]) redemptionsByUser[r.user_id] = [];
-                redemptionsByUser[r.user_id].push(r);
-            });
-        }
-
-        const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
-        res.setHeader('Content-disposition', 'attachment; filename=filtered_accounts_report.pdf');
-        res.setHeader('Content-type', 'application/pdf');
-        doc.pipe(res);
-
-        const table = {
-            title: "Filtered Accounts Report",
-            headers: ["Prof No.", "Email", "Server", "Points", "Redemptions"],
-            rows: users.map(acc => {
-                const pts = latestPointsByUser[acc.id] ? latestPointsByUser[acc.id].points : 0;
-                let redempStr = '-';
-                if (redemptionsByUser[acc.id] && redemptionsByUser[acc.id].length > 0) {
-                    redempStr = redemptionsByUser[acc.id].map(r => {
-                        const d = r.redeemed_at.includes('T') ? new Date(r.redeemed_at).toLocaleDateString() : r.redeemed_at;
-                        return `${r.item_name} (${d})`;
-                    }).join(', ');
-                }
-                return [
-                    acc.profile_no ? String(acc.profile_no) : '-',
-                    acc.email || '-',
-                    acc.server || '-',
-                    String(pts),
-                    redempStr
-                ];
-            })
-        };
-
-        await doc.table(table, {
-            prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
-            prepareRow: () => doc.font("Helvetica").fontSize(10)
-        });
-        
-        doc.end();
-    } catch (error) {
-        console.error("Export Filtered PDF Error:", error);
-        res.status(500).json({ error: 'Error generating PDF' });
-    }
-};
-
-const createAccount = async (req, res) => {
-    const adminId = req.user.admin_id;
-    const { profile_no, email, server, proton_email, password, alternative_email, initial_points, notes, status } = req.body;
-
-    if (!email) return res.status(400).json({ error: 'Email is required' });
-
-    try {
-        let finalProfileNo = profile_no;
-        
-        // Auto-assign profile_no if not provided
-        if (!finalProfileNo) {
-            const { data: maxProfileNoRow } = await supabase
-                .from('Users')
-                .select('profile_no')
-                .eq('admin_id', adminId)
-                .order('profile_no', { ascending: false })
-                .limit(1);
-            
-            finalProfileNo = (maxProfileNoRow && maxProfileNoRow.length > 0 && maxProfileNoRow[0].profile_no) 
-                ? maxProfileNoRow[0].profile_no + 1 
-                : 1;
-        }
-
-        // Check if email already exists
-        const { data: existingUser } = await supabase
-            .from('Users')
-            .select('id')
-            .eq('email', email)
-            .eq('admin_id', adminId)
-            .single();
-
-        if (existingUser) {
-            return res.status(400).json({ error: 'An account with this email already exists' });
-        }
-
-        // Insert new user
-        const { data: newUser, error: insertError } = await supabase
-            .from('Users')
-            .insert([{
-                admin_id: adminId, 
-                email, 
-                server: server || null, 
-                proton_email: proton_email || null, 
-                profile_no: finalProfileNo, 
-                status: status || 'active', 
-                password: password || null,
-                alternative_email: alternative_email || null,
-                notes: notes || null
-            }])
-            .select('id')
-            .single();
-
-        if (insertError) throw insertError;
-
-        // Insert initial points if provided and > 0
-        if (initial_points && initial_points > 0) {
-            const now = new Date().toISOString();
-            const dateStr = `InitialPoints_${Date.now()}`;
-            
-            await supabase.from('Points').insert([{
-                user_id: newUser.id, date: dateStr, points: initial_points, updated_at: now
-            }]);
-        }
-
-        res.status(201).json({ success: true, message: 'Account created successfully', id: newUser.id });
-    } catch (error) {
-        console.error("Create Account Error:", error);
-        res.status(500).json({ error: 'Error creating account' });
-    }
-};
-
-const exportDetailed = async (req, res) => {
-    const adminId = req.user.admin_id;
-    const { accountType = 'old', statusFilter = 'all', format = 'xlsx' } = req.body;
-
-    try {
-        let query = supabase.from('Users').select('*').eq('admin_id', adminId).order('profile_no', { ascending: true });
-        if (statusFilter && statusFilter !== 'all') {
-            query = query.eq('status', statusFilter);
-        }
-        const { data: users, error: userErr } = await query;
-        if (userErr || !users || users.length === 0) return res.status(404).json({ error: "No accounts found" });
-
-        const userIds = users.map(u => u.id);
-        const { data: points } = await supabase.from('Points').select('*').in('user_id', userIds);
-        const latestPointsByUser = {};
-        if (points) {
-            points.forEach(p => {
-                if (!latestPointsByUser[p.user_id] || p.id > latestPointsByUser[p.user_id].id) {
-                    latestPointsByUser[p.user_id] = p;
-                }
-            });
-        }
-
-        const { data: redemptions } = await supabase.from('Redemptions').select('*').in('user_id', userIds).order('redeemed_at', { ascending: false });
-        const redemptionsByUser = {};
-        if (redemptions) {
-            redemptions.forEach(r => {
-                if (!redemptionsByUser[r.user_id]) redemptionsByUser[r.user_id] = [];
-                redemptionsByUser[r.user_id].push(r);
-            });
-        }
-
-        // Filter by Old / New / All
-        const filteredUsers = users.filter(acc => {
-            const hasRedemptions = redemptionsByUser[acc.id] && redemptionsByUser[acc.id].length > 0;
-            if (accountType === 'old') return hasRedemptions;
-            if (accountType === 'new') return !hasRedemptions;
-            return true; // 'all'
-        });
-
-        if (filteredUsers.length === 0) {
-            return res.status(404).json({ error: `No ${accountType === 'all' ? '' : accountType + ' '}accounts found` });
-        }
-
-        // Columns: Profile No., Email, Password, Alternative Mail, Server, Current Present Points, Redeemed Item, Old/New Account
-        const exportData = filteredUsers.map(acc => {
-            const userRedemps = redemptionsByUser[acc.id] || [];
-            const isOld = userRedemps.length > 0;
-            const redeemedItemsStr = isOld 
-                ? userRedemps.map(r => r.item_name).join(', ') 
-                : 'None';
-            const pts = latestPointsByUser[acc.id] ? latestPointsByUser[acc.id].points : 0;
-
-            return {
-                'Profile No.': acc.profile_no !== null ? acc.profile_no : '',
-                'Email': acc.email || '',
-                'Password': acc.password || '',
-                'Alternative Mail': acc.alternative_email || '',
-                'Server': acc.server || '',
-                'Current Present Points': pts,
-                'Redeemed Item': redeemedItemsStr,
-                'Old/New Account': isOld ? 'Old Account' : 'New Account'
-            };
-        });
-
-        if (format === 'xlsx') {
-            const wb = xlsx.utils.book_new();
-            const ws = xlsx.utils.json_to_sheet(exportData);
-            xlsx.utils.book_append_sheet(wb, ws, "Detailed_Accounts");
-            const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
-            res.setHeader('Content-Disposition', `attachment; filename="PointPulse_Detailed_${accountType}_Accounts.xlsx"`);
-            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            return res.send(buf);
-        } else {
-            const json2csvParser = new Parser();
-            const csv = json2csvParser.parse(exportData);
-            res.header('Content-Type', 'text/csv; charset=utf-8');
-            res.attachment(`PointPulse_Detailed_${accountType}_Accounts.csv`);
-            return res.send(csv);
-        }
-    } catch (error) {
-        console.error("Export Detailed Error:", error);
-        res.status(500).json({ error: 'Error exporting detailed accounts' });
-    }
-};
-
-const exportPointsList = async (req, res) => {
-    const adminId = req.user.admin_id;
-    const { accountType = 'old', statusFilter = 'all', format = 'xlsx' } = req.body;
-
-    try {
-        let query = supabase.from('Users').select('*').eq('admin_id', adminId).order('profile_no', { ascending: true });
-        if (statusFilter && statusFilter !== 'all') {
-            query = query.eq('status', statusFilter);
-        }
-        const { data: users, error: userErr } = await query;
-        if (userErr || !users || users.length === 0) return res.status(404).json({ error: "No accounts found" });
-
-        const userIds = users.map(u => u.id);
-        const { data: points } = await supabase.from('Points').select('*').in('user_id', userIds);
-        const latestPointsByUser = {};
-        if (points) {
-            points.forEach(p => {
-                if (!latestPointsByUser[p.user_id] || p.id > latestPointsByUser[p.user_id].id) {
-                    latestPointsByUser[p.user_id] = p;
-                }
-            });
-        }
-
-        const { data: redemptions } = await supabase.from('Redemptions').select('user_id').in('user_id', userIds);
-        const userRedemptionSet = new Set(redemptions ? redemptions.map(r => r.user_id) : []);
-
-        const filteredUsers = users.filter(acc => {
-            const hasRedemptions = userRedemptionSet.has(acc.id);
-            if (accountType === 'old') return hasRedemptions;
-            if (accountType === 'new') return !hasRedemptions;
-            return true; // 'all'
-        });
-
-        if (filteredUsers.length === 0) {
-            return res.status(404).json({ error: `No ${accountType === 'all' ? '' : accountType + ' '}accounts found` });
-        }
-
-        // Columns ONLY: Profile No., Email, Server, Points
-        const exportData = filteredUsers.map(acc => {
-            const pts = latestPointsByUser[acc.id] ? latestPointsByUser[acc.id].points : 0;
-            return {
-                'Profile No.': acc.profile_no !== null ? acc.profile_no : '',
-                'Email': acc.email || '',
-                'Server': acc.server || '',
-                'Points': pts
-            };
-        });
-
-        if (format === 'xlsx') {
-            const wb = xlsx.utils.book_new();
-            const ws = xlsx.utils.json_to_sheet(exportData);
-            xlsx.utils.book_append_sheet(wb, ws, "Points_List");
-            const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
-            res.setHeader('Content-Disposition', `attachment; filename="PointPulse_Points_List_${accountType}.xlsx"`);
-            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            return res.send(buf);
-        } else {
-            const json2csvParser = new Parser();
-            const csv = json2csvParser.parse(exportData);
-            res.header('Content-Type', 'text/csv; charset=utf-8');
-            res.attachment(`PointPulse_Points_List_${accountType}.csv`);
-            return res.send(csv);
-        }
-    } catch (error) {
-        console.error("Export Points List Error:", error);
-        res.status(500).json({ error: 'Error exporting points list' });
+        console.error('Export CSV Error:', error);
+        res.status(500).json({ error: 'Error generating CSV export' });
     }
 };
 
 module.exports = {
     setIo,
-    uploadExcel,
     getAccounts,
+    createAccount,
     updateAccount,
-    exportCsv,
-    exportPdf,
-    exportAccountPdf,
-    exportFilteredPdf,
-    exportDetailed,
-    exportPointsList,
-    createAccount
+    updatePoints,
+    uploadExcel,
+    exportCsv
 };
