@@ -15,19 +15,29 @@
     <!-- 1. AUTHENTICATION VIEW (Google OAuth 2.0) -->
     <div id="view-auth" class="auth-container">
         <div class="auth-card">
-            <div class="auth-logo">
-                <i class="fa-solid fa-chart-line" style="color: var(--primary-color);"></i> PointPulse
+            <!-- Brand Emblem -->
+            <div class="auth-brand-badge">
+                <div class="auth-icon-wrapper">
+                    <i class="fa-solid fa-chart-line"></i>
+                </div>
             </div>
-            <p class="text-secondary" style="margin-bottom: 2rem; font-size: 0.95rem;">
-                Enterprise Multi-User Rewards & Performance Platform
+
+            <div class="auth-logo">PointPulse</div>
+            <div class="auth-platform-tag">
+                <span class="auth-pill"><i class="fa-solid fa-shield-halved"></i> Enterprise Access Portal</span>
+            </div>
+            
+            <p class="auth-tagline">
+                Enterprise Multi-User Rewards & Performance Platform.<br>
+                Sign in with your verified Google account.
             </p>
 
-            <div id="auth-error-banner" class="hidden" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: var(--danger-color); padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.88rem; text-align: left;">
+            <div id="auth-error-banner" class="hidden auth-error-box">
                 <i class="fa-solid fa-circle-exclamation"></i> <span id="auth-error-text">Authentication Error</span>
             </div>
 
             <!-- Official Google Sign-In Area -->
-            <div style="margin-bottom: 1.75rem;">
+            <div class="auth-action-area">
                 <div id="g_id_onload"
                      data-client_id=""
                      data-context="signin"
@@ -35,38 +45,42 @@
                      data-callback="handleGoogleCredentialResponse"
                      data-auto_prompt="false">
                 </div>
-                <div id="google-btn-container" style="display: flex; justify-content: center; min-height: 44px;">
-                    <!-- Rendered by Google or custom fallback button -->
+                <div id="google-btn-container" class="google-btn-wrapper">
+                    <!-- High-fidelity Google Sign-In Button -->
                     <button id="custom-google-btn" class="google-signin-btn" onclick="initiateGoogleLogin()">
-                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+                        <svg class="google-svg-icon" viewBox="0 0 24 24" width="22" height="22">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                        </svg>
                         <span>Continue with Google</span>
                     </button>
                 </div>
             </div>
 
-            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; text-align: left;">
-                <i class="fa-solid fa-shield-halved" style="color: var(--success-color); margin-right: 4px;"></i>
-                <strong>Genuine Google Authentication Only</strong><br>
-                PointPulse validates verified Google identity tokens directly. We never request or store your Google password.
-            </div>
-
-            <!-- Quick Sandbox Identity Switcher for Verification & Admin Provisioning -->
-            <div style="border-top: 1px solid var(--border-color); padding-top: 1.25rem; text-align: left;">
-                <span class="text-muted" style="font-size: 0.78rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; display: block; margin-bottom: 0.5rem;">
-                    <i class="fa-solid fa-key" style="color: var(--secondary-color);"></i> Provisioning & Sandbox Identities:
-                </span>
-                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    <button class="btn secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.78rem;" onclick="sandboxLogin('001.workme@gmail.com', 'PointPulse Administrator')">
-                        <i class="fa-solid fa-user-shield" style="color: var(--primary-color);"></i> Admin (001.workme@gmail.com)
-                    </button>
-                    <button class="btn secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.78rem;" onclick="sandboxLogin('user.operator@gmail.com', 'Sarah Operator')">
-                        <i class="fa-solid fa-user"></i> Test Operator
-                    </button>
-                    <button class="btn secondary-btn" style="padding: 0.4rem 0.75rem; font-size: 0.78rem;" onclick="sandboxLogin('alex.farmer@gmail.com', 'Alex Farmer')">
-                        <i class="fa-solid fa-user-plus"></i> New Registrant
-                    </button>
+            <!-- Enterprise Trust & Governance Indicators -->
+            <div class="auth-security-box">
+                <div class="security-item">
+                    <i class="fa-solid fa-user-shield" style="color: var(--primary-color);"></i>
+                    <span>Single-Admin Governance</span>
+                </div>
+                <div class="security-divider"></div>
+                <div class="security-item">
+                    <i class="fa-solid fa-lock" style="color: var(--success-color);"></i>
+                    <span>OAuth 2.0 Verified</span>
+                </div>
+                <div class="security-divider"></div>
+                <div class="security-item">
+                    <i class="fa-solid fa-key" style="color: var(--secondary-color);"></i>
+                    <span>Zero Password Storage</span>
                 </div>
             </div>
+
+            <p class="auth-footer-note">
+                <i class="fa-solid fa-circle-check text-success"></i> Genuine Google Cloud Identity token validation active.<br>
+                Registration requires administrator authorization prior to dashboard access.
+            </p>
         </div>
     </div>
 

@@ -122,6 +122,49 @@ async function checkSession() {
     }
 }
 
+let googleClientId = '';
+
+// Fetch backend authentication configuration (Google Client ID)
+async function loadAuthConfig() {
+    try {
+        const res = await fetch('/api/auth/config');
+        if (res.ok) {
+            const data = await res.json();
+            googleClientId = data.googleClientId || '';
+            initializeGoogleGSI();
+        }
+    } catch (e) {
+        console.warn('Failed to fetch auth configuration:', e);
+    }
+}
+
+// Initialize Google Identity Services (GSI)
+function initializeGoogleGSI() {
+    if (!googleClientId || !window.google || !google.accounts || !google.accounts.id) return;
+    try {
+        google.accounts.id.initialize({
+            client_id: googleClientId,
+            callback: handleGoogleCredentialResponse,
+            auto_select: false,
+            ux_mode: 'popup'
+        });
+
+        const btnContainer = document.getElementById('google-btn-container');
+        if (btnContainer) {
+            google.accounts.id.renderButton(btnContainer, {
+                theme: 'outline',
+                size: 'large',
+                width: 360,
+                text: 'continue_with',
+                shape: 'rectangular',
+                logo_alignment: 'center'
+            });
+        }
+    } catch (err) {
+        console.error('Google Identity initialization error:', err);
+    }
+}
+
 // Google OAuth Handler (Callback from Google Identity Services)
 window.handleGoogleCredentialResponse = async function(response) {
     if (!response || !response.credential) {
@@ -131,19 +174,23 @@ window.handleGoogleCredentialResponse = async function(response) {
     await processGoogleLogin(response.credential);
 };
 
-// Initiate Google Login popup
+// Initiate Google Login popup or prompt
 function initiateGoogleLogin() {
-    if (window.google && google.accounts && google.accounts.id) {
-        google.accounts.id.prompt();
+    if (googleClientId && window.google && google.accounts && google.accounts.id) {
+        try {
+            google.accounts.id.prompt((notification) => {
+                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                    console.log('Google prompt not displayed/skipped');
+                }
+            });
+        } catch (e) {
+            console.error('Google prompt exception:', e);
+        }
+    } else if (!googleClientId) {
+        showAuthError('Google Client ID is not configured on the server. Please add GOOGLE_CLIENT_ID to your environment variables.');
     } else {
-        showAuthError('Google Sign-In is initializing. You can use the Sandbox identity buttons below for instant access.');
+        showAuthError('Google Identity Services is loading. Please wait a moment and try again.');
     }
-}
-
-// Sandbox Quick Login (For instant verification and admin provisioning)
-async function sandboxLogin(email, name) {
-    const mockToken = `TEST_TOKEN_${email}:${name}`;
-    await processGoogleLogin(mockToken);
 }
 
 // Process Google Login on Backend
@@ -1583,5 +1630,10 @@ function toggleTheme() {
     document.body.classList.toggle('light-theme');
 }
 
-// Run initial session check on script execution
+// Run initial session check & load authentication configuration
+loadAuthConfig();
 checkSession();
+
+window.addEventListener('load', () => {
+    if (googleClientId) initializeGoogleGSI();
+});

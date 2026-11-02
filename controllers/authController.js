@@ -40,24 +40,29 @@ async function verifyGoogleIdToken(token) {
         // If external network is blocked or testing environment token
     }
 
-    // 3. Secure Dev/Sandbox Mock Token verification for testing only
-    try {
-        if (token.startsWith('TEST_TOKEN_')) {
-            const parts = token.replace('TEST_TOKEN_', '').split(':');
-            const email = parts[0];
-            const name = parts[1] || 'Test User';
-            return {
-                sub: `mock_sub_${Buffer.from(email).toString('hex')}`,
-                email: email.toLowerCase(),
-                email_verified: true,
-                name: name,
-                picture: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff`
-            };
-        }
-    } catch (e) {}
+    // 3. Test tokens strictly restricted to automated testing suite only (NODE_ENV === 'test')
+    if (process.env.NODE_ENV === 'test' && token.startsWith('TEST_TOKEN_')) {
+        const parts = token.replace('TEST_TOKEN_', '').split(':');
+        const email = parts[0];
+        const name = parts[1] || 'Test User';
+        return {
+            sub: `mock_sub_${Buffer.from(email).toString('hex')}`,
+            email: email.toLowerCase(),
+            email_verified: true,
+            name: name,
+            picture: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff`
+        };
+    }
 
-    throw new Error('Failed to verify Google identity. Please sign in again.');
+    throw new Error('Failed to verify genuine Google identity. Please authenticate with a verified Google account.');
 }
+
+// Return public authentication configuration (Google Client ID)
+const getAuthConfig = (req, res) => {
+    return res.json({
+        googleClientId: GOOGLE_CLIENT_ID || ''
+    });
+};
 
 // Google Auth Handler
 const googleAuth = async (req, res) => {
@@ -376,5 +381,6 @@ module.exports = {
     googleAuth,
     submitRegistration,
     getMe,
-    logout
+    logout,
+    getAuthConfig
 };

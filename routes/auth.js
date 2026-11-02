@@ -3,6 +3,7 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const { authenticateToken } = require('../middleware/authMiddleware');
 
+router.get('/config', authController.getAuthConfig);
 router.post('/google', authController.googleAuth);
 router.post('/register-form', authController.submitRegistration);
 router.get('/me', authenticateToken, authController.getMe);
