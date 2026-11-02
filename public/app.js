@@ -187,7 +187,7 @@ function initiateGoogleLogin() {
             console.error('Google prompt exception:', e);
         }
     } else if (!googleClientId) {
-        showAuthError('Google Client ID is not configured on the server. Please add GOOGLE_CLIENT_ID to your environment variables.');
+        openModal('modal-auth-setup');
     } else {
         showAuthError('Google Identity Services is loading. Please wait a moment and try again.');
     }

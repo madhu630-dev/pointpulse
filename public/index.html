@@ -1090,6 +1090,50 @@
         </div>
     </div>
 
+    <!-- GOOGLE OAUTH CONFIGURATION GUIDE MODAL -->
+    <div id="modal-auth-setup" class="modal-overlay hidden">
+        <div class="modal-box modal-lg">
+            <div class="modal-header">
+                <h4 style="font-size: 1.15rem; font-weight: 700;">
+                    <i class="fa-brands fa-google" style="color: var(--primary-color);"></i> Google OAuth 2.0 Client ID Required
+                </h4>
+                <button class="icon-btn" onclick="closeModal('modal-auth-setup')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body" style="line-height: 1.6; font-size: 0.9rem;">
+                <div style="background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
+                    <strong>Why is this setup step required?</strong><br>
+                    PointPulse strictly enforces authentic Google OAuth 2.0 (no insecure passwords or backdoors). Google requires your application's <strong>Client ID</strong> to authorize sign-ins and verify your admin account (<code>001.workme@gmail.com</code>).
+                </div>
+
+                <h5 style="margin-bottom: 0.6rem; font-size: 0.95rem; color: #fff;">3-Step Quick Configuration:</h5>
+                <ol style="padding-left: 1.25rem; margin-bottom: 1.5rem; color: var(--text-secondary);">
+                    <li style="margin-bottom: 0.6rem;">
+                        Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: var(--secondary-color); text-decoration: underline;">Google Cloud Console → APIs & Services → Credentials</a>.
+                    </li>
+                    <li style="margin-bottom: 0.6rem;">
+                        Click <strong>Create Credentials</strong> → <strong>OAuth client ID</strong> (Application type: <em>Web application</em>).<br>
+                        Under <strong>Authorized JavaScript origins</strong>, add your Render domain:<br>
+                        <code style="background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px; color: #38bdf8;">https://pointpulse-8bbn.onrender.com</code>
+                    </li>
+                    <li style="margin-bottom: 0.6rem;">
+                        Copy your <strong>Client ID</strong> (ends in <code>.apps.googleusercontent.com</code>).<br>
+                        Go to your <strong>Render Dashboard</strong> → <strong>pointpulse</strong> service → <strong>Environment</strong> tab, click <strong>Add Environment Variable</strong>:<br>
+                        Key: <code style="color: #4ade80;">GOOGLE_CLIENT_ID</code><br>
+                        Value: <code style="color: #4ade80;">[Your Client ID]</code>
+                    </li>
+                </ol>
+
+                <div style="font-size: 0.82rem; color: var(--text-muted); background: rgba(255,255,255,0.03); padding: 0.75rem 1rem; border-radius: 6px;">
+                    <i class="fa-solid fa-circle-info text-primary"></i> Once saved in Render, your service will automatically redeploy and Google Sign-In will immediately be active.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary-btn" onclick="closeModal('modal-auth-setup')">Close</button>
+                <a href="https://dashboard.render.com" target="_blank" class="btn primary-btn">Open Render Dashboard</a>
+            </div>
+        </div>
+    </div>
+
     <!-- TOAST NOTIFICATIONS -->
     <div class="toast-container" id="toast-container"></div>
 
