@@ -737,6 +737,47 @@ const getAuditLogs = async (req, res) => {
     }
 };
 
+// Explicitly assign accounts to a specific platform user
+const assignAccountsToUser = async (req, res) => {
+    const targetUserId = parseInt(req.params.id);
+    const { accountIds } = req.body;
+
+    if (!Array.isArray(accountIds)) {
+        return res.status(400).json({ error: 'accountIds must be an array of account IDs' });
+    }
+
+    try {
+        const targetUser = await get(`SELECT * FROM app_users WHERE id = ?`, [targetUserId]);
+        if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+        for (const accId of accountIds) {
+            await run(
+                `INSERT INTO account_metadata (account_id, user_id, updated_at)
+                 VALUES (?, ?, datetime('now'))
+                 ON CONFLICT(account_id) DO UPDATE SET user_id = excluded.user_id, updated_at = datetime('now')`,
+                [accId, targetUserId]
+            );
+        }
+
+        // Audit log
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, result)
+             VALUES (?, ?, 'admin', ?, 'Assign Accounts to User', ?, 'success')`,
+            [req.user.id, req.user.email, targetUserId, JSON.stringify({ count: accountIds.length, accountIds })]
+        );
+
+        res.json({
+            success: true,
+            message: `Successfully assigned ${accountIds.length} account(s) to ${targetUser.name}`,
+            targetUserId,
+            assignedCount: accountIds.length
+        });
+    } catch (error) {
+        console.error('Assign Accounts Error:', error);
+        res.status(500).json({ error: 'Failed to assign accounts' });
+    }
+};
+
 module.exports = {
     setIo,
     getDashboardOverview,
@@ -753,5 +794,6 @@ module.exports = {
     getRewardEligibility,
     getNotifications,
     markNotificationRead,
-    getAuditLogs
+    getAuditLogs,
+    assignAccountsToUser
 };

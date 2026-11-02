@@ -30,6 +30,9 @@ const getAccounts = async (req, res) => {
         const metaMap = new Map();
         metaRows.forEach(m => metaMap.set(m.account_id, m));
 
+        const adminUserRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
+        const defaultAdminId = adminUserRow ? adminUserRow.id : 1;
+
         const accountIds = accounts.map(a => a.id);
 
         // Fetch Points & Redemptions
@@ -86,7 +89,8 @@ const getAccounts = async (req, res) => {
             const accRedemptions = redemptionsByAccount[acc.id] || [];
 
             const meta = metaMap.get(acc.id);
-            const assignedUserId = meta ? meta.user_id : (acc.admin_id || 1);
+            // Strictly assign unmapped legacy accounts to the Administrator, NEVER to non-admin users
+            const assignedUserId = meta ? meta.user_id : defaultAdminId;
             let classification = meta ? meta.classification : null;
             if (!classification) {
                 classification = accRedemptions.length > 0 ? 'old' : 'new';
@@ -238,7 +242,8 @@ const updateAccount = async (req, res) => {
 
         // Check ownership from account_metadata
         const meta = await get(`SELECT user_id, classification FROM account_metadata WHERE account_id = ?`, [accountId]);
-        const ownerId = meta ? meta.user_id : (existing.admin_id || 1);
+        const adminUserRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
+        const ownerId = meta ? meta.user_id : (adminUserRow ? adminUserRow.id : 1);
 
         if (user.role !== 'admin' && ownerId !== user.id) {
             return res.status(403).json({ error: 'Access denied. You do not own this account.' });
@@ -301,7 +306,8 @@ const updatePoints = async (req, res) => {
         if (accErr || !account) return res.status(404).json({ error: 'Account not found' });
 
         const meta = await get(`SELECT user_id FROM account_metadata WHERE account_id = ?`, [accountId]);
-        const ownerId = meta ? meta.user_id : (account.admin_id || 1);
+        const adminUserRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
+        const ownerId = meta ? meta.user_id : (adminUserRow ? adminUserRow.id : 1);
 
         if (user.role !== 'admin' && ownerId !== user.id) {
             return res.status(403).json({ error: 'Access denied. You do not own this account.' });
