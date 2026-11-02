@@ -7,6 +7,9 @@
     "test": "node tests/platform.test.js",
     "start": "node server.js"
   },
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -24,7 +27,6 @@
     "pdfkit-table": "^0.1.99",
     "pino": "^10.3.1",
     "socket.io": "^4.8.3",
-    "sqlite3": "^6.0.1",
     "xlsx": "^0.18.5"
   }
 }

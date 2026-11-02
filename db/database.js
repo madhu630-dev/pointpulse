@@ -1,34 +1,105 @@
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const supabase = require('./supabase');
 
 const dbPath = path.resolve(__dirname, '../database.sqlite');
-const sqlite = new sqlite3.Database(dbPath);
-
 const ADMIN_EMAIL = '001.workme@gmail.com';
 
+let sqlite = null;
+let driverType = null;
+
+// Initialize SQLite driver: prefer high-performance native node:sqlite (Node 22.5+ / 24+), with sqlite3 fallback
+try {
+    const { DatabaseSync } = require('node:sqlite');
+    sqlite = new DatabaseSync(dbPath);
+    driverType = 'node:sqlite';
+    console.log('[PointPulse DB] Initialized native node:sqlite driver.');
+} catch (e) {
+    try {
+        const sqlite3 = require('sqlite3').verbose();
+        sqlite = new sqlite3.Database(dbPath);
+        driverType = 'sqlite3';
+        console.log('[PointPulse DB] Initialized sqlite3 driver.');
+    } catch (err2) {
+        console.error('[PointPulse DB] No SQLite driver available:', err2.message);
+    }
+}
+
+const sanitizeParams = (params) => {
+    if (!params) return [];
+    const arr = Array.isArray(params) ? params : [params];
+    return arr.map(v => (v === undefined ? null : v));
+};
+
 // Promisified SQLite helper functions
-const run = (sql, params = []) => new Promise((resolve, reject) => {
-    sqlite.run(sql, params, function (err) {
-        if (err) reject(err);
-        else resolve({ lastID: this.lastID, changes: this.changes });
-    });
-});
+const run = (sql, params = []) => {
+    if (driverType === 'node:sqlite') {
+        return new Promise((resolve, reject) => {
+            try {
+                const cleanParams = sanitizeParams(params);
+                const stmt = sqlite.prepare(sql.trim());
+                const info = cleanParams.length > 0 ? stmt.run(...cleanParams) : stmt.run();
+                resolve({ lastID: Number(info.lastInsertRowid), changes: info.changes });
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
 
-const get = (sql, params = []) => new Promise((resolve, reject) => {
-    sqlite.get(sql, params, (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
+    return new Promise((resolve, reject) => {
+        if (!sqlite) return reject(new Error('SQLite database not initialized'));
+        sqlite.run(sql, params, function (err) {
+            if (err) reject(err);
+            else resolve({ lastID: this.lastID, changes: this.changes });
+        });
     });
-});
+};
 
-const all = (sql, params = []) => new Promise((resolve, reject) => {
-    sqlite.all(sql, params, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
+const get = (sql, params = []) => {
+    if (driverType === 'node:sqlite') {
+        return new Promise((resolve, reject) => {
+            try {
+                const cleanParams = sanitizeParams(params);
+                const stmt = sqlite.prepare(sql.trim());
+                const row = cleanParams.length > 0 ? stmt.get(...cleanParams) : stmt.get();
+                resolve(row ? { ...row } : undefined);
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    return new Promise((resolve, reject) => {
+        if (!sqlite) return reject(new Error('SQLite database not initialized'));
+        sqlite.get(sql, params, (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
     });
-});
+};
+
+const all = (sql, params = []) => {
+    if (driverType === 'node:sqlite') {
+        return new Promise((resolve, reject) => {
+            try {
+                const cleanParams = sanitizeParams(params);
+                const stmt = sqlite.prepare(sql.trim());
+                const rows = cleanParams.length > 0 ? stmt.all(...cleanParams) : stmt.all();
+                resolve((rows || []).map(r => ({ ...r })));
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    return new Promise((resolve, reject) => {
+        if (!sqlite) return reject(new Error('SQLite database not initialized'));
+        sqlite.all(sql, params, (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+        });
+    });
+};
 
 // Initialize SQLite Schema to guarantee full functionality
 async function initSchema() {
