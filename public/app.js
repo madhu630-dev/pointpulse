@@ -535,7 +535,7 @@ async function handleDirectUserRegister(event) {
 }
 
 function downloadExcelTemplate() {
-    const csvContent = "profile_no,email,server,status,alternative_email,initial_points,notes\n101,sample1@gmail.com,US-EAST#1,active,recovery1@gmail.com,1500,Sample account note\n102,sample2@gmail.com,US-WEST#2,active,recovery2@gmail.com,2000,Sample account note\n";
+    const csvContent = "profile_no,email,server,recovery_email,proton_email,current_points,classification,status,notes\n1,user.acc1@gmail.com,US-AZ#146,recovery1@gmail.com,proton1@proton.me,5000,OLD,active,Primary production profile\n2,user.acc2@gmail.com,US-DC#257,recovery2@gmail.com,proton2@proton.me,7350,NEW,active,Secondary backup profile\n";
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -544,7 +544,7 @@ function downloadExcelTemplate() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('Template Downloaded', 'Sample CSV template downloaded successfully.');
+    showToast('Template Downloaded', 'Sample CSV template downloaded with all 9 account fields.');
 }
 
 window.switchAuthTab = switchAuthTab;
@@ -1350,20 +1350,45 @@ async function openAccountDetailsPage(accountId) {
         windowPill.innerHTML = `<span class="badge ${ed.isWithinWindow ? 'badge-active' : 'badge-pending'}"><i class="fa-solid fa-clock"></i> ${ed.statusText}</span>`;
 
         // Section A: Overview
-        document.getElementById('acc-detail-prof-no').textContent = `Profile #${acc.profile_no || '-'}`;
-        document.getElementById('acc-detail-overview-email').textContent = acc.email;
-        document.getElementById('acc-detail-overview-status').textContent = (acc.status || 'active').toUpperCase();
-        document.getElementById('acc-detail-overview-class').textContent = acc.classification === 'old' ? 'Old Account' : 'New Account';
-        document.getElementById('acc-detail-created-at').textContent = acc.createdAt ? new Date(acc.createdAt).toLocaleString() : 'Legacy Record';
-        document.getElementById('acc-detail-registered-at').textContent = acc.registeredAt ? new Date(acc.registeredAt).toLocaleString() : 'System Migrated';
-        document.getElementById('acc-detail-updated-at').textContent = acc.lastUpdated ? new Date(acc.lastUpdated).toLocaleString() : 'Not modified';
-        document.getElementById('acc-detail-notes').textContent = acc.notes || 'None';
+        const elProfNo = document.getElementById('acc-detail-prof-no');
+        if (elProfNo) elProfNo.textContent = `Profile #${acc.profile_no || '-'}`;
+
+        const elEmail = document.getElementById('acc-detail-email');
+        if (elEmail) elEmail.textContent = acc.email || '-';
+
+        const elStatus = document.getElementById('acc-detail-status');
+        if (elStatus) {
+            elStatus.textContent = (acc.status || 'active').toUpperCase();
+            elStatus.className = `badge ${acc.status === 'active' ? 'badge-active' : 'badge-banned'}`;
+        }
+
+        const elClass = document.getElementById('acc-detail-classification');
+        if (elClass) {
+            elClass.textContent = acc.classification === 'old' ? 'Old Account' : 'New Account';
+            elClass.className = 'badge badge-primary';
+        }
+
+        const elCreated = document.getElementById('acc-detail-created');
+        if (elCreated) elCreated.textContent = acc.createdAt ? new Date(acc.createdAt).toLocaleString() : 'Legacy Record';
+
+        const elUpdated = document.getElementById('acc-detail-updated');
+        if (elUpdated) elUpdated.textContent = acc.lastUpdated ? new Date(acc.lastUpdated).toLocaleString() : 'Not modified';
+
+        const elNotes = document.getElementById('acc-detail-notes');
+        if (elNotes) elNotes.textContent = acc.notes || 'None';
 
         // Section B: Credentials & Information
-        document.getElementById('acc-detail-cred-email').textContent = acc.email;
-        document.getElementById('acc-detail-cred-alt').textContent = acc.recovery_email || 'Not Configured';
-        document.getElementById('acc-detail-cred-proton').textContent = acc.proton_email || 'None';
-        document.getElementById('acc-detail-cred-server').textContent = acc.server || 'None';
+        const elCredEmail = document.getElementById('acc-detail-cred-email');
+        if (elCredEmail) elCredEmail.textContent = acc.email || '-';
+
+        const elCredAlt = document.getElementById('acc-detail-cred-alt');
+        if (elCredAlt) elCredAlt.textContent = acc.recovery_email || acc.alternative_email || 'Not Configured';
+
+        const elCredProton = document.getElementById('acc-detail-cred-proton');
+        if (elCredProton) elCredProton.textContent = acc.proton_email || 'None';
+
+        const elCredServer = document.getElementById('acc-detail-cred-server');
+        if (elCredServer) elCredServer.textContent = acc.server || 'None';
 
         // Section C: Activity Log (Administrative Only)
         const actBody = document.getElementById('acc-detail-activity-body');
@@ -2688,12 +2713,31 @@ function closeModal(modalId) {
     if (m) m.classList.add('hidden');
 }
 
-function openManualModal(tab = 'user') {
-    switchManualTab(tab);
+function openManualModal(tab) {
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    const adminTabBtn = document.getElementById('btn-manual-tab-admin');
+    const adminPdfBtn = document.getElementById('btn-manual-dl-admin-pdf');
+
+    if (isAdmin) {
+        if (adminTabBtn) adminTabBtn.classList.remove('hidden');
+        if (adminPdfBtn) adminPdfBtn.classList.remove('hidden');
+        switchManualTab(tab || 'admin');
+    } else {
+        // Strict role security: non-admins CANNOT see the admin manual
+        if (adminTabBtn) adminTabBtn.classList.add('hidden');
+        if (adminPdfBtn) adminPdfBtn.classList.add('hidden');
+        switchManualTab('user');
+    }
     openModal('modal-platform-manual');
 }
 
 function switchManualTab(tab) {
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    // If not admin and requesting admin tab, strictly force back to user manual
+    if (tab === 'admin' && !isAdmin) {
+        tab = 'user';
+    }
+
     const tabs = ['user', 'admin', 'faq'];
     tabs.forEach(t => {
         const pane = document.getElementById(`manual-pane-${t}`);

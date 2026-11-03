@@ -97,7 +97,7 @@ const generateReport = async (req, res) => {
             const m = metaMap.get(a.id);
             return {
                 ...a,
-                user_id: m ? m.user_id : primaryOperatorId,
+                user_id: (m && m.user_id && m.user_id !== 1) ? m.user_id : primaryOperatorId,
                 classification: m ? m.classification : 'new'
             };
         });

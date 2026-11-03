@@ -57,11 +57,14 @@ const getAccountMatchesForReward = async (req, res) => {
         const metaMap = new Map();
         metaRows.forEach(m => metaMap.set(m.account_id, m));
 
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : 1;
+
         let accounts = (allAccounts || []).map(a => {
             const m = metaMap.get(a.id);
             return {
                 ...a,
-                user_id: m ? m.user_id : 1,
+                user_id: (m && m.user_id && m.user_id !== 1) ? m.user_id : primaryOperatorId,
                 classification: m ? m.classification : 'new'
             };
         });
@@ -201,11 +204,14 @@ const getRedemptions = async (req, res) => {
         const metaMap = new Map();
         metaRows.forEach(m => metaMap.set(m.account_id, m));
 
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : 1;
+
         let accounts = (allAccounts || []).map(a => {
             const m = metaMap.get(a.id);
             return {
                 ...a,
-                user_id: m ? m.user_id : 1
+                user_id: (m && m.user_id && m.user_id !== 1) ? m.user_id : primaryOperatorId
             };
         });
 

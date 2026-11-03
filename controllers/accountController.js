@@ -97,7 +97,7 @@ const getAccounts = async (req, res) => {
 
             const meta = metaMap.get(acc.id);
             // Assign accounts to mapped user or default to primary operator laptopmew1@gmail.com
-            const assignedUserId = meta ? meta.user_id : primaryOperatorId;
+            const assignedUserId = (meta && meta.user_id && meta.user_id !== defaultAdminId && meta.user_id !== 1) ? meta.user_id : primaryOperatorId;
             const ownerObj = userMap.get(assignedUserId) || adminUserRow || { id: defaultAdminId, name: 'Sole Administrator', email: ADMIN_EMAIL, role: 'admin' };
             let classification = meta ? meta.classification : null;
             if (!classification) {
@@ -184,7 +184,9 @@ const getAccountDetails = async (req, res) => {
         const meta = await get(`SELECT user_id, classification, updated_at FROM account_metadata WHERE account_id = ?`, [accountId]);
         const adminRow = await get(`SELECT id, name, email FROM app_users WHERE role = 'admin' LIMIT 1`);
         const defaultAdminId = adminRow ? adminRow.id : 1;
-        const ownerId = meta ? meta.user_id : defaultAdminId;
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
+        const ownerId = (meta && meta.user_id && meta.user_id !== defaultAdminId && meta.user_id !== 1) ? meta.user_id : primaryOperatorId;
 
         // Strict isolation check: non-admins can only see their own accounts
         if (user.role !== 'admin' && ownerId !== user.id) {
@@ -686,12 +688,24 @@ const uploadExcel = async (req, res) => {
         if (data.length === 0) return res.status(400).json({ error: 'Empty file' });
 
         const keys = Object.keys(data[0]);
-        const emailCol = keys.find(k => k.toLowerCase().includes('email') && !k.toLowerCase().includes('proton') && !k.toLowerCase().includes('alt'));
+        const emailCol = keys.find(k => {
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return (lk.includes('email') || lk.includes('identifier') || lk.includes('account')) && !lk.includes('proton') && !lk.includes('alt') && !lk.includes('recovery');
+        });
         const protonCol = keys.find(k => k.toLowerCase().includes('proton'));
-        const serverCol = keys.find(k => k.toLowerCase().includes('server'));
-        const profileCol = keys.find(k => k.toLowerCase().includes('profile'));
+        const serverCol = keys.find(k => k.toLowerCase().includes('server') || k.toLowerCase().includes('proxy'));
+        const profileCol = keys.find(k => k.toLowerCase().includes('profile') || k.toLowerCase() === 'prof' || k.toLowerCase() === 'prof#');
         const statusCol = keys.find(k => k.toLowerCase().includes('status') || k.toLowerCase().includes('ban'));
-        const altEmailCol = keys.find(k => k.toLowerCase().includes('alt') && k.toLowerCase().includes('email'));
+        const altEmailCol = keys.find(k => {
+            const lk = k.toLowerCase();
+            return lk.includes('recovery') || lk.includes('alt') || lk.includes('backup') || lk.includes('secondary');
+        });
+        const classCol = keys.find(k => k.toLowerCase().includes('class'));
+        const notesCol = keys.find(k => k.toLowerCase().includes('note') || k.toLowerCase().includes('comment') || k.toLowerCase().includes('desc'));
+        const singlePointsCol = keys.find(k => {
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return lk === 'points' || lk === 'currentpoints' || lk === 'initialpoints' || lk === 'pts' || lk === 'score';
+        });
         const pointsCols = keys.filter(k => k.toLowerCase().startsWith('points_') || (!isNaN(Date.parse(k)) && k.includes('-')));
 
         const targetUserId = (user.role === 'admin' && req.body.targetUserId) ? parseInt(req.body.targetUserId) : user.id;
@@ -717,18 +731,24 @@ const uploadExcel = async (req, res) => {
         let syncedCount = 0;
 
         for (const row of data) {
-            const email = row[emailCol];
+            const email = emailCol ? row[emailCol] : null;
             if (!email) continue;
 
             const server = serverCol ? (row[serverCol] || '') : '';
             const protonEmail = protonCol ? (row[protonCol] || '') : '';
             const altEmail = altEmailCol ? (row[altEmailCol] || '') : '';
+            const notes = notesCol ? (row[notesCol] || '') : '';
             let profileNo = profileCol ? row[profileCol] : null;
             if (profileNo) profileNo = parseInt(profileNo.toString().replace(/\D/g, '')) || null;
 
             let status = 'active';
             if (statusCol && row[statusCol] && row[statusCol].toString().toLowerCase().includes('ban')) {
                 status = 'banned';
+            }
+
+            let classification = 'new';
+            if (classCol && row[classCol] && row[classCol].toString().toLowerCase().includes('old')) {
+                classification = 'old';
             }
 
             const { data: existingAccount } = await supabase
@@ -742,7 +762,7 @@ const uploadExcel = async (req, res) => {
                 accountId = existingAccount.id;
                 profileNo = profileNo || existingAccount.profile_no;
                 await supabase.from('Users').update({
-                    server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail
+                    server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail, notes
                 }).eq('id', accountId);
             } else {
                 if (!profileNo) {
@@ -753,7 +773,7 @@ const uploadExcel = async (req, res) => {
                 }
 
                 const { data: newAcc, error: insertError } = await supabase.from('Users').insert([{
-                    admin_id: 1, email, server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail
+                    admin_id: 1, email, server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail, notes
                 }]).select('id').single();
 
                 if (insertError) continue;
@@ -762,21 +782,35 @@ const uploadExcel = async (req, res) => {
 
             // Assign metadata
             await run(
-                `INSERT OR REPLACE INTO account_metadata (account_id, user_id, classification, updated_at)
-                 VALUES (?, ?, 'new', datetime('now'))`,
-                [accountId, targetUserId]
+                `INSERT INTO account_metadata (account_id, user_id, classification, updated_at)
+                 VALUES (?, ?, ?, datetime('now'))
+                 ON CONFLICT(account_id) DO UPDATE SET user_id = excluded.user_id, classification = excluded.classification, updated_at = datetime('now')`,
+                [accountId, targetUserId, classification]
             );
 
             // Log activity
             await run(
                 `INSERT INTO account_activity_logs (account_id, actor_id, actor_name, actor_role, action_type, description, new_data)
                  VALUES (?, ?, ?, ?, 'created', 'Account registered via spreadsheet upload', ?)`,
-                [accountId, user.id, user.name, user.role, JSON.stringify({ email, profile_no: profileNo })]
+                [accountId, user.id, user.name, user.role, JSON.stringify({ email, profile_no: profileNo, server, classification })]
             );
+
+            // Process Single Points Column (current_points / points)
+            if (singlePointsCol && row[singlePointsCol] !== undefined && row[singlePointsCol] !== '') {
+                const ptVal = parseInt(row[singlePointsCol].toString().replace(/,/g, ''));
+                if (!isNaN(ptVal)) {
+                    await supabase.from('Points').upsert({
+                        user_id: accountId,
+                        date: new Date().toISOString().split('T')[0],
+                        points: ptVal,
+                        updated_at: new Date().toISOString()
+                    });
+                }
+            }
 
             syncedCount++;
 
-            // Process Points Columns
+            // Process Multiple Date Points Columns
             for (const pCol of pointsCols) {
                 const ptVal = parseInt(row[pCol]);
                 if (!isNaN(ptVal)) {

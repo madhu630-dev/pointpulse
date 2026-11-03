@@ -136,14 +136,16 @@ const listUsers = async (req, res) => {
             });
         }
 
+        const adminRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
+        const defaultAdminId = adminRow ? adminRow.id : 1;
         const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
-        const primaryOperatorId = laptopUser ? laptopUser.id : 1;
+        const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
 
         // Aggregate per platform user
         const enrichedUsers = users.map(u => {
             const userAccounts = (allAccounts || []).filter(a => {
                 const m = metaMap.get(a.id);
-                const assignedId = m ? m.user_id : primaryOperatorId;
+                const assignedId = (m && m.user_id && m.user_id !== defaultAdminId && m.user_id !== 1) ? m.user_id : primaryOperatorId;
                 return assignedId === u.id;
             });
             const activeCount = userAccounts.filter(a => a.status === 'active').length;
@@ -308,12 +310,14 @@ const getUserDetails = async (req, res) => {
         const metaMap = new Map();
         metaRows.forEach(m => metaMap.set(m.account_id, m));
 
+        const adminRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
+        const defaultAdminId = adminRow ? adminRow.id : 1;
         const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
-        const primaryOperatorId = laptopUser ? laptopUser.id : 1;
+        const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
 
         const accounts = (allUserAccounts || []).filter(a => {
             const m = metaMap.get(a.id);
-            const assignedId = m ? m.user_id : primaryOperatorId;
+            const assignedId = (m && m.user_id && m.user_id !== defaultAdminId && m.user_id !== 1) ? m.user_id : primaryOperatorId;
             return assignedId == userId;
         }).map(a => {
             const m = metaMap.get(a.id);
@@ -631,11 +635,14 @@ const getRewardEligibility = async (req, res) => {
         const metaMap = new Map();
         metaRows.forEach(m => metaMap.set(m.account_id, m));
 
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : 1;
+
         let accounts = (allAccounts || []).map(a => {
             const m = metaMap.get(a.id);
             return {
                 ...a,
-                user_id: m ? m.user_id : 1,
+                user_id: (m && m.user_id && m.user_id !== 1) ? m.user_id : primaryOperatorId,
                 classification: m ? m.classification : 'new'
             };
         });

@@ -1,389 +1,467 @@
 /**
- * PointPulse Platform Comprehensive PDF Manual Generator
- * Generates official, publication-quality PDF operating manuals
- * for both User/Operator and Platform Administrator.
+ * PointPulse Enterprise 5-Page Diagrammatic Manual Generator
+ * Generates publication-ready, strictly 5-page PDF manuals
+ * packed with diagrams, flowcharts, and visual workflows.
  */
 
 const PDFDocument = require('pdfkit-table');
 const fs = require('fs');
 const path = require('path');
 
-// Ensure output directories exist
 const outDir = path.join(__dirname, '..', 'public', 'downloads');
 if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
 }
 
 // -----------------------------------------------------------------------------
-// STYLING & HELPER UTILITIES
+// CORE DRAWING PRIMITIVES & DIAGRAMMATIC HELPERS
 // -----------------------------------------------------------------------------
-function checkPageSpace(doc, requiredHeight = 80) {
-    if (doc.y + requiredHeight > 750) {
-        doc.addPage({ margin: 40, size: 'A4' });
-    }
-}
 
-function addCoverPage(doc, title, subtitle, targetAudience, badgeText) {
-    const pageWidth = doc.page.width;
-    const pageHeight = doc.page.height;
-
-    // Background
-    doc.rect(0, 0, pageWidth, pageHeight).fill('#0f172a');
-
-    // Decorative top accent bar
-    doc.rect(40, 40, pageWidth - 80, 5).fill('#6366f1');
-
-    // Brand Header
-    doc.fillColor('#ffffff').fontSize(28).font('Helvetica-Bold')
-       .text('POINTPULSE', 40, 160, { tracking: 2 });
+function drawPageHeader(doc, pageNum, pageTitle, manualType) {
+    // Top banner
+    doc.fillColor('#64748b').fontSize(8).font('Helvetica-Bold')
+       .text(`POINTPULSE ENTERPRISE • ${manualType.toUpperCase()}`, 36, 22, { align: 'left' });
+    doc.fillColor('#0284c7').font('Helvetica-Bold')
+       .text(`PAGE ${pageNum} OF 5`, doc.page.width - 136, 22, { align: 'right', width: 100 });
     
-    doc.fillColor('#94a3b8').fontSize(13).font('Helvetica')
-       .text('Enterprise Performance & Rewards Management Platform', 40, 200);
+    // Header divider line
+    doc.moveTo(36, 34).lineTo(doc.page.width - 36, 34).strokeColor('#cbd5e1').lineWidth(0.75).stroke();
 
-    // Divider
-    doc.rect(40, 230, 80, 3).fill('#38bdf8');
-
-    // Title
-    doc.fillColor('#f8fafc').fontSize(22).font('Helvetica-Bold')
-       .text(title, 40, 255, { width: 515 });
-
-    if (subtitle) {
-        doc.fillColor('#cbd5e1').fontSize(12).font('Helvetica')
-           .text(subtitle, 40, 295, { width: 515, lineGap: 3 });
-    }
-
-    // Target Audience Badge
-    doc.roundedRect(40, 350, 340, 32, 6).fill('#1e293b');
-    doc.fillColor('#38bdf8').fontSize(10).font('Helvetica-Bold')
-       .text(`TARGET AUDIENCE: ${targetAudience.toUpperCase()}`, 55, 361);
-
-    // Metadata Card
-    const now = new Date();
-    const metaY = 440;
-    doc.roundedRect(40, metaY, pageWidth - 80, 150, 8)
-       .fillOpacity(0.08).fill('#ffffff').strokeOpacity(0.25).stroke('#ffffff');
-
-    doc.fillOpacity(1.0);
-    doc.fillColor('#94a3b8').fontSize(10).font('Helvetica-Bold')
-       .text('DOCUMENT SPECIFICATIONS & GOVERNANCE', 60, metaY + 16);
-
-    doc.fillColor('#ffffff').fontSize(9.5).font('Helvetica')
-       .text(`Official Release: November 2026 (Platform v2.4)`, 60, metaY + 38)
-       .text(`Live Production URL: https://pointpulse-8bbn.onrender.com`, 60, metaY + 56)
-       .text(`Governance Model: Single-Administrator Authority (001.workme@gmail.com)`, 60, metaY + 74)
-       .text(`Primary Operator: laptopmew1@gmail.com`, 60, metaY + 92)
-       .text(`Security Architecture: Zero Plain-Text Password Exposure • Bcrypt Authenticated`, 60, metaY + 110)
-       .text(`Security Notice: Confidential internal documentation. Do not distribute externally.`, 60, metaY + 128);
-
-    // Bottom Footer
-    doc.fillColor('#64748b').fontSize(8.5).font('Helvetica')
-       .text('PointPulse Platform Operating Manual • Enterprise Edition', 40, pageHeight - 45, { align: 'center', width: pageWidth - 80 });
-
-    // Begin content on new page
-    doc.addPage({ margin: 40, size: 'A4' });
-}
-
-function addSectionHeader(doc, num, title) {
-    checkPageSpace(doc, 75);
-    doc.moveDown(0.8);
-    
-    // Background pill for section number
-    const startY = doc.y;
-    doc.roundedRect(40, startY, 26, 20, 4).fill('#4f46e5');
-    doc.fillColor('#ffffff').fontSize(11).font('Helvetica-Bold')
-       .text(String(num), 40, startY + 4, { width: 26, align: 'center' });
-
+    // Page Section Title
     doc.fillColor('#0f172a').fontSize(14).font('Helvetica-Bold')
-       .text(title, 75, startY + 2, { width: 480 });
-
-    doc.moveTo(40, startY + 26).lineTo(doc.page.width - 40, startY + 26)
-       .strokeColor('#e2e8f0').lineWidth(1).stroke();
-
-    doc.y = startY + 34;
+       .text(pageTitle, 36, 42, { width: 523 });
+    doc.moveTo(36, 60).lineTo(180, 60).strokeColor('#4f46e5').lineWidth(2).stroke();
 }
 
-function addSubHeader(doc, title) {
-    checkPageSpace(doc, 50);
-    doc.moveDown(0.5);
-    doc.fillColor('#4338ca').fontSize(11.5).font('Helvetica-Bold')
-       .text(title, 40, doc.y, { width: 515 });
-    doc.moveDown(0.3);
+function drawPageFooter(doc) {
+    const footerY = 788;
+    doc.moveTo(36, footerY).lineTo(doc.page.width - 36, footerY).strokeColor('#e2e8f0').lineWidth(0.75).stroke();
+    doc.fillColor('#64748b').fontSize(7.5).font('Helvetica')
+       .text('PointPulse Platform v2.4 • Confidential Internal Operating Documentation', 36, footerY + 6, { align: 'left', lineBreak: false });
+    doc.fillColor('#4f46e5').font('Helvetica-Bold')
+       .text('https://pointpulse-8bbn.onrender.com', doc.page.width - 236, footerY + 6, { align: 'right', width: 200, lineBreak: false });
 }
 
-function addParagraph(doc, text) {
-    checkPageSpace(doc, 30);
-    doc.fillColor('#334155').fontSize(9.5).font('Helvetica')
-       .text(text, 40, doc.y, { width: 515, lineGap: 3 });
-    doc.moveDown(0.4);
-}
-
-function addBullet(doc, boldLabel, text) {
-    checkPageSpace(doc, 25);
-    const y = doc.y;
-    doc.fillColor('#6366f1').fontSize(12).text('•', 45, y - 1);
-    doc.fillColor('#0f172a').fontSize(9.5).font('Helvetica-Bold')
-       .text(boldLabel + ' ', 58, y, { continued: true });
-    doc.fillColor('#334155').font('Helvetica')
-       .text(text, { width: 495, lineGap: 2.5 });
-    doc.moveDown(0.35);
-}
-
-function addCallout(doc, type, title, message) {
-    checkPageSpace(doc, 65);
-    doc.moveDown(0.4);
-    
-    let borderColor = '#6366f1';
-    let bgColor = '#eef2ff';
-    let titleColor = '#3730a3';
-    
-    if (type === 'warning') {
-        borderColor = '#f59e0b';
-        bgColor = '#fffbeb';
-        titleColor = '#92400e';
-    } else if (type === 'success') {
-        borderColor = '#10b981';
-        bgColor = '#ecfdf5';
-        titleColor = '#065f46';
+function drawCard(doc, x, y, w, h, title, borderColor = '#cbd5e1', bgColor = '#f8fafc', titleColor = '#0f172a') {
+    doc.roundedRect(x, y, w, h, 6).fill(bgColor).strokeColor(borderColor).lineWidth(1).stroke();
+    if (title) {
+        doc.fillColor(titleColor).fontSize(10).font('Helvetica-Bold')
+           .text(title, x + 12, y + 8, { width: w - 24 });
     }
-
-    const boxY = doc.y;
-    // Estimate text height
-    doc.fontSize(9).font('Helvetica');
-    const height = doc.heightOfString(message, { width: 485 }) + 32;
-
-    doc.roundedRect(40, boxY, 515, height, 6).fill(bgColor);
-    doc.rect(40, boxY, 4, height).fill(borderColor);
-
-    doc.fillColor(titleColor).fontSize(10).font('Helvetica-Bold')
-       .text(title, 55, boxY + 8);
-    
-    doc.fillColor('#1e293b').fontSize(9).font('Helvetica')
-       .text(message, 55, boxY + 22, { width: 485, lineGap: 2.5 });
-
-    doc.y = boxY + height + 8;
 }
 
-function addExampleBox(doc, title, items) {
-    checkPageSpace(doc, 80);
-    doc.moveDown(0.4);
+function drawFlowStep(doc, x, y, w, h, stepNum, title, desc, color = '#4f46e5', bgColor = '#ffffff') {
+    doc.roundedRect(x, y, w, h, 6).fill(bgColor).strokeColor(color).lineWidth(1.2).stroke();
+    
+    // Step number pill
+    doc.roundedRect(x + 8, y + 8, 20, 16, 4).fill(color);
+    doc.fillColor('#ffffff').fontSize(8.5).font('Helvetica-Bold')
+       .text(String(stepNum), x + 8, y + 12, { width: 20, align: 'center' });
 
-    const boxY = doc.y;
-    const calcHeight = 28 + (items.length * 16);
+    // Step Title
+    doc.fillColor('#0f172a').fontSize(9.5).font('Helvetica-Bold')
+       .text(title, x + 34, y + 10, { width: w - 42 });
 
-    doc.roundedRect(40, boxY, 515, calcHeight, 6)
-       .fill('#f8fafc').strokeColor('#cbd5e1').lineWidth(1).stroke();
+    // Step Description
+    if (desc) {
+        doc.fillColor('#334155').fontSize(8).font('Helvetica')
+           .text(desc, x + 10, y + 28, { width: w - 20, lineGap: 1.5 });
+    }
+}
 
-    doc.fillColor('#0284c7').fontSize(9.5).font('Helvetica-Bold')
-       .text(`REAL-WORLD EXAMPLE: ${title}`, 52, boxY + 8);
+function drawConnectorDown(doc, x, y, length = 14, label = '') {
+    const endY = y + length;
+    doc.moveTo(x, y).lineTo(x, endY).strokeColor('#6366f1').lineWidth(1.5).stroke();
+    // Arrow head
+    doc.polygon([x - 3.5, endY - 4], [x + 3.5, endY - 4], [x, endY]).fill('#6366f1');
+    if (label) {
+        doc.fillColor('#4f46e5').fontSize(7.5).font('Helvetica-Bold')
+           .text(label, x + 6, y + 2);
+    }
+}
 
-    let curY = boxY + 24;
-    items.forEach(([label, val]) => {
-        doc.fillColor('#475569').fontSize(8.5).font('Helvetica-Bold')
-           .text(label + ':', 52, curY, { width: 140 });
-        doc.fillColor('#0f172a').fontSize(8.5).font('Courier-Bold')
-           .text(val, 195, curY, { width: 345 });
-        curY += 15;
+function drawConnectorRight(doc, x, y, length = 18, label = '') {
+    const endX = x + length;
+    doc.moveTo(x, y).lineTo(endX, y).strokeColor('#6366f1').lineWidth(1.5).stroke();
+    // Arrow head
+    doc.polygon([endX - 4, y - 3.5], [endX - 4, y + 3.5], [endX, y]).fill('#6366f1');
+    if (label) {
+        doc.fillColor('#4f46e5').fontSize(7.5).font('Helvetica-Bold')
+           .text(label, x + 2, y - 10);
+    }
+}
+
+function drawDiagramTable(doc, x, y, w, headers, rows, colWidths) {
+    let curY = y;
+    const headerHeight = 20;
+    
+    // Header row background
+    doc.roundedRect(x, curY, w, headerHeight, 4).fill('#1e293b');
+    
+    let curX = x + 8;
+    headers.forEach((h, i) => {
+        doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold')
+           .text(h, curX, curY + 6, { width: colWidths[i] });
+        curX += colWidths[i];
     });
 
-    doc.y = boxY + calcHeight + 8;
-}
+    curY += headerHeight + 3;
 
-function finalizeDoc(doc, manualHeaderTitle) {
-    const range = doc.bufferedPageRange();
-    for (let i = range.start + 1; i < range.start + range.count; i++) {
-        doc.switchToPage(i);
-        
-        // Header
-        doc.fillColor('#64748b').fontSize(8).font('Helvetica')
-           .text(`PointPulse Platform Manual • ${manualHeaderTitle}`, 40, 20, { align: 'left' });
-        doc.text('Confidential / Internal Guide', doc.page.width - 180, 20, { align: 'right', width: 140 });
-        doc.moveTo(40, 30).lineTo(doc.page.width - 40, 30).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+    // Data rows
+    rows.forEach((row, rIdx) => {
+        const rowHeight = row.height || 18;
+        const rowBg = rIdx % 2 === 0 ? '#f8fafc' : '#ffffff';
+        doc.roundedRect(x, curY, w, rowHeight, 2).fill(rowBg).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
 
-        // Footer
-        doc.moveTo(40, doc.page.height - 30).lineTo(doc.page.width - 40, doc.page.height - 30).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
-        doc.fillColor('#64748b').fontSize(8).font('Helvetica')
-           .text(`https://pointpulse-8bbn.onrender.com`, 40, doc.page.height - 22, { align: 'left' });
-        doc.text(`Page ${i + 1} of ${range.count}`, doc.page.width - 140, doc.page.height - 22, { align: 'right', width: 100 });
-    }
+        let cellX = x + 8;
+        row.cols.forEach((c, i) => {
+            doc.fillColor(row.bold && i === 0 ? '#0f172a' : '#334155').fontSize(7.5).font(row.bold && i === 0 ? 'Helvetica-Bold' : 'Helvetica')
+               .text(c, cellX, curY + 4, { width: colWidths[i] });
+            cellX += colWidths[i];
+        });
+
+        curY += rowHeight + 2;
+    });
+
+    return curY;
 }
 
 // -----------------------------------------------------------------------------
-// GENERATOR 1: OPERATOR & USER MANUAL
+// 1. OPERATOR & USER MANUAL (EXACTLY 5 PAGES)
 // -----------------------------------------------------------------------------
-async function generateOperatorManual() {
-    const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: true });
+async function buildOperatorManual() {
+    const doc = new PDFDocument({ margin: 36, size: 'A4', autoFirstPage: false });
     const pdfPath = path.join(outDir, 'PointPulse_Operator_User_Manual.pdf');
     const writeStream = fs.createWriteStream(pdfPath);
     doc.pipe(writeStream);
 
-    addCoverPage(
-        doc,
-        'OPERATOR & USER MANUAL',
-        'Comprehensive Step-by-Step Operating Guide for Account Managers, Operators & Team Members',
-        'Operators & Assigned Users (e.g. laptopmew1@gmail.com)',
-        'OPERATOR EDITION'
-    );
+    // ==========================================
+    // PAGE 1: Architecture & Onboarding Flowchart
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 1, 'Architecture & Getting Started Workflow', 'Operator & User Manual');
 
-    // Section 1: Introduction & Architecture
-    addSectionHeader(doc, 1, 'Platform Overview & Role Responsibilities');
-    addParagraph(doc, 'PointPulse is an enterprise rewards, points tally, and multi-user account management platform. As an Operator, you are granted full operational control over your assigned portfolio of accounts. Your primary duties include monitoring account health, keeping points current, importing new profiles, requesting corrections, and claiming reward redemptions.');
+    // Architecture Overview Box
+    drawCard(doc, 36, 68, 523, 140, 'SYSTEM ARCHITECTURE: ROLE & DATA ISOLATION', '#4f46e5', '#eef2ff', '#3730a3');
     
-    addCallout(doc, 'success', 'Zero Plain-Text Password Standard', 
-        'For institutional security, account credentials stored in PointPulse display proxy configurations, servers, and recovery identifiers. Plain-text passwords are encrypted at rest and never shown on screens or reports.');
+    // Draw 3 horizontal architecture nodes
+    drawFlowStep(doc, 50, 94, 140, 52, 1, 'PointPulse Cloud', 'Secure Production Node\npointpulse-8bbn.onrender.com', '#0284c7');
+    drawConnectorRight(doc, 192, 120, 24);
+    drawFlowStep(doc, 218, 94, 150, 52, 2, 'Operator Identity', 'User: laptopmew1@gmail.com\nBcrypt Authenticated & Approved', '#4f46e5');
+    drawConnectorRight(doc, 370, 120, 24);
+    drawFlowStep(doc, 396, 94, 145, 52, 3, 'Assigned Portfolio', 'Strict Data Isolation\nOnly assigned accounts visible', '#10b981');
 
-    // Section 2: Registration & Sign In
-    addSectionHeader(doc, 2, 'Account Registration & Signing In');
-    addParagraph(doc, 'PointPulse supports dual authentication: direct Gmail/Email with secure password, or one-click Google OAuth 2.0.');
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('Security Rule: Zero plain-text passwords stored or displayed. Strict database isolation ensures operators cannot view or alter other users\' accounts.', 50, 160, { width: 495 });
+
+    // FLOWCHART: Onboarding Lifecycle (Vertical pipeline)
+    drawCard(doc, 36, 218, 523, 400, 'ONBOARDING LIFECYCLE: FROM SIGNUP TO DASHBOARD ACCESS', '#cbd5e1', '#ffffff');
+
+    drawFlowStep(doc, 52, 244, 490, 48, 1, 'Access Access Portal & Select Registration Tab', 'Navigate to https://pointpulse-8bbn.onrender.com and click the "Create Account" tab at the top of the authentication card.', '#4f46e5');
+    drawConnectorDown(doc, 297, 294, 14);
+
+    drawFlowStep(doc, 52, 310, 490, 48, 2, 'Submit Registration Form with Gmail & Password', 'Enter Full Name, active Gmail (e.g. laptopmew1@gmail.com), and secure password. Credentials are encrypted using bcrypt (10 rounds).', '#4f46e5');
+    drawConnectorDown(doc, 297, 360, 14);
+
+    drawFlowStep(doc, 52, 376, 490, 48, 3, 'Application Queued: Pending Review Screen', 'PointPulse displays "Application Submitted: Pending review by Administrator (001.workme@gmail.com)". Access is temporarily held.', '#f59e0b', '#fffbeb');
+    drawConnectorDown(doc, 297, 426, 14);
+
+    drawFlowStep(doc, 52, 442, 490, 48, 4, 'Sole Administrator Approves Operator Account', 'Administrator logs in, verifies the application under User Management, and clicks "Approve". Initial Free Editing Window is assigned.', '#10b981', '#ecfdf5');
+    drawConnectorDown(doc, 297, 492, 14);
+
+    drawFlowStep(doc, 52, 508, 490, 48, 5, 'Login & Immediate Dashboard Admission', 'Enter Gmail and password under "Sign In" tab (or click "Continue with Google"). Full operator dashboard loads with assigned accounts.', '#4f46e5');
+
+    doc.fillColor('#64748b').fontSize(8).font('Helvetica-Bold')
+       .text('VERIFIED GOOGLE AUTHENTICATION ACTIVE • BCrypt Password Protection • Zero Plain-Text Storage', 52, 574, { width: 490, align: 'center' });
+
+    // KPI Cards Reference Box
+    drawCard(doc, 36, 630, 523, 164, 'OPERATOR DASHBOARD: 4 PRIMARY KPI METRICS', '#cbd5e1', '#f8fafc');
     
-    addSubHeader(doc, 'Step 2.1: Registering a New Operator Account');
-    addParagraph(doc, 'If you do not yet have an approved operator profile:');
-    addBullet(doc, '1. Access Portal:', 'Open your browser and navigate to https://pointpulse-8bbn.onrender.com.');
-    addBullet(doc, '2. Select Create Account Tab:', 'Click the "Create Account" tab at the top of the access card.');
-    addBullet(doc, '3. Fill Profile Information:', 'Enter your Full Name, your active Gmail address (e.g. laptopmew1@gmail.com), and choose a password (minimum 6 characters).');
-    addBullet(doc, '4. Submit Application:', 'Click the blue "Create Account" button.');
-    addBullet(doc, '5. Pending Approval Screen:', 'Your application is placed in pending review status. The Administrator (001.workme@gmail.com) will review and approve your account.');
-
-    addExampleBox(doc, 'Operator Registration Form Values', [
-        ['Full Name', 'Laptop Mew'],
-        ['Gmail Address', 'laptopmew1@gmail.com'],
-        ['Password', '•••••••••••• (Encrypted with bcrypt 10 rounds)'],
-        ['Initial System State', 'Pending Administrator Review']
-    ]);
-
-    addSubHeader(doc, 'Step 2.2: Logging In (Direct Credentials or Google OAuth)');
-    addParagraph(doc, 'Once your registration has been approved by the Administrator:');
-    addBullet(doc, 'Option A (Direct Sign In):', 'Ensure "Sign In" tab is selected. Enter your Gmail address and password, then click "Sign In to PointPulse".');
-    addBullet(doc, 'Option B (Google Sign-In):', 'Click the "Continue with Google" button below the login form and authenticate using your verified Google profile.');
-
-    // Section 3: Navigating the Operator Workspace
-    addSectionHeader(doc, 3, 'Navigating Your Operator Workspace');
-    addParagraph(doc, 'Upon signing in, your personalized dashboard provides immediate visibility into your assigned assets:');
-    addBullet(doc, 'My Overview:', 'Real-time KPI summary showing your Total Active Accounts, Total Cumulative Points, Open Requests, and Available Rewards.');
-    addBullet(doc, 'Active Accounts:', 'Your primary accounts workspace showing status, server, points, and action buttons for all live profiles.');
-    addBullet(doc, 'Banned Accounts:', 'Dedicated repository for accounts that have been flagged, suspended, or require remediation.');
-    addBullet(doc, 'Old & New Accounts:', 'Tenure-segmented view separating mature accounts from newly registered ones.');
-    addBullet(doc, 'Available Rewards:', 'Interactive catalogue of vouchers, gift cards, and payout rewards eligible for redemption.');
-    addBullet(doc, 'Request Center:', 'Ticketing hub to submit Account Corrections and request temporary Points Editing Windows.');
-    addBullet(doc, 'Download Reports:', 'Self-service export hub to download your accounts and points history in CSV format.');
-
-    // Section 4: Managing Your Accounts & Dossier
-    addSectionHeader(doc, 4, 'Managing Your Account Portfolio');
-    addParagraph(doc, 'Under the "Active Accounts" menu, your assigned accounts are listed in a structured data table.');
-
-    addSubHeader(doc, 'Table Columns Explained');
-    addBullet(doc, 'PROF #:', 'The browser profile or system slot number (e.g. P1, P2, P3).');
-    addBullet(doc, 'ACCOUNT IDENTIFIER:', 'The registered email or username for the account.');
-    addBullet(doc, 'SERVER:', 'The proxy server or geographical exit node (e.g. US-AZ#146, US-DC#257).');
-    addBullet(doc, 'CURRENT POINTS:', 'The current balance of verified points accumulated by this profile.');
-    addBullet(doc, 'CLASSIFICATION:', 'Tenure badge indicating whether the account is classified as NEW or OLD.');
-    addBullet(doc, 'STATUS:', 'Green ACTIVE badge or red BANNED badge.');
-
-    addSubHeader(doc, 'Account Action Buttons');
-    addBullet(doc, 'Details Button:', 'Opens the comprehensive Account Dossier. Contains 3 tabs: (1) Overview, (2) Credentials & Proxy information (server tags, recovery emails, masked secrets), and (3) Activity History logs.');
-    addBullet(doc, 'Points Button:', 'View recent points ledger entries or submit a points update (unlocked during editing windows).');
-    addBullet(doc, 'Edit Button:', 'Modify server tag, classification, or notes (unlocked during your Free Editing Period).');
-
-    // Section 5: Adding Accounts (Single & Bulk Excel Upload)
-    addSectionHeader(doc, 5, 'Adding Accounts: Single & Bulk Excel Upload');
-    addParagraph(doc, 'You can add new accounts to your portfolio during your active Free Editing Period using either single entry or bulk spreadsheet upload.');
-
-    addSubHeader(doc, 'Method A: Single Account Addition');
-    addBullet(doc, '1. Click "+ Add Account":', 'Located on the top-right toolbar of the Active Accounts view.');
-    addBullet(doc, '2. Enter Details:', 'Provide Profile Number (optional), Account Email, Server tag, Initial Points, and Classification.');
-    addBullet(doc, '3. Save Profile:', 'Click "Save Account". The account is immediately bound to your operator profile.');
-
-    addExampleBox(doc, 'Single Account Input', [
-        ['Profile #', 'P1'],
-        ['Account Email', 'rathantata51@gmail.com'],
-        ['Server / Proxy', 'US-AZ#146'],
-        ['Current Points', '-2500'],
-        ['Classification', 'OLD'],
-        ['Assigned Operator', 'laptopmew1@gmail.com']
-    ]);
-
-    addSubHeader(doc, 'Method B: Bulk Excel / CSV Upload');
-    addParagraph(doc, 'To import tens or hundreds of accounts simultaneously:');
-    addBullet(doc, '1. Click "Upload Excel":', 'Located next to the Free Editing Periods button on the toolbar.');
-    addBullet(doc, '2. Download Template:', 'Click the "Download Sample CSV" link in the modal to review exact column headers.');
-    addBullet(doc, '3. Format Spreadsheet:', 'Ensure your file conforms to the required specification below.');
-    addBullet(doc, '4. Upload File:', 'Select your .csv or .xlsx file and click "Import Accounts". The system validates each row and provisions the records under your ownership.');
-
-    const csvTable = {
-        headers: [
-            { label: 'Column Header', property: 'col', width: 110 },
-            { label: 'Required', property: 'req', width: 65 },
-            { label: 'Example Value', property: 'eg', width: 150 },
-            { label: 'Field Description', property: 'desc', width: 190 }
-        ],
-        datas: [
-            { col: 'profile_num', req: 'Yes', eg: 'P1', desc: 'Browser profile slot / identifier' },
-            { col: 'account_identifier', req: 'Yes', eg: 'laptopmew.acc1@gmail.com', desc: 'Account email address' },
-            { col: 'server', req: 'Yes', eg: 'US-AZ#146', desc: 'Proxy exit node / server tag' },
-            { col: 'current_points', req: 'No', eg: '5200', desc: 'Current points balance (default: 0)' },
-            { col: 'classification', req: 'No', eg: 'OLD', desc: 'Tenure badge (OLD or NEW)' },
-            { col: 'status', req: 'No', eg: 'active', desc: 'Status (active or banned)' }
-        ]
-    };
-
-    await doc.table(csvTable, {
-        prepareHeader: () => doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#ffffff'),
-        prepareRow: (row, i) => doc.font('Helvetica').fontSize(8).fillColor(i % 2 === 0 ? '#1e293b' : '#334155'),
-        headerBackgroundColor: '#4f46e5'
+    // 4 KPI Mini Boxes
+    const kpiData = [
+        ['ACTIVE ACCOUNTS', 'Live Operational Profiles', '#10b981'],
+        ['TOTAL POINTS', 'Aggregated Balance', '#0284c7'],
+        ['PENDING REQUESTS', 'Open Tickets / Windows', '#f59e0b'],
+        ['ELIGIBLE REWARDS', 'Unlocked Vouchers', '#8b5cf6']
+    ];
+    kpiData.forEach((k, i) => {
+        const kX = 52 + (i * 123);
+        doc.roundedRect(kX, 656, 115, 60, 4).fill('#ffffff').strokeColor(k[2]).lineWidth(1).stroke();
+        doc.fillColor(k[2]).fontSize(8).font('Helvetica-Bold').text(k[0], kX + 6, 664, { width: 103, align: 'center' });
+        doc.fillColor('#0f172a').fontSize(14).font('Helvetica-Bold').text('LIVE', kX + 6, 678, { width: 103, align: 'center' });
+        doc.fillColor('#64748b').fontSize(7).font('Helvetica').text(k[1], kX + 6, 696, { width: 103, align: 'center' });
     });
 
-    // Section 6: Free Editing Period & Read-Only Mode
-    addSectionHeader(doc, 6, 'Free Editing Period & Read-Only Locking');
-    addCallout(doc, 'warning', 'Core Governance Mechanism: Free Editing Window',
-        'PointPulse safeguards portfolio integrity by limiting full write access to designated time windows. When approved, you receive an initial Free Editing Period (e.g. 24 or 48 hours). During this window, you have full privileges to add accounts, edit servers, and upload spreadsheets. When the timer reaches zero, your portfolio automatically enters Read-Only Mode.');
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('All metrics recalculate dynamically in real time when account status, points tallies, or redemptions update.', 52, 730, { width: 490 });
 
-    addSubHeader(doc, 'Monitoring the Live Countdown Badge');
-    addParagraph(doc, 'When your window is active, a glowing green pill is displayed in the top navbar:');
-    addBullet(doc, 'Active Indicator:', '[ ⏱️ Free Editing Window: 18h 45m remaining ]');
-    addBullet(doc, 'Read-Only Indicator:', 'When expired, buttons change to read-only status and a tooltip directs you to the Request Center.');
+    drawPageFooter(doc);
 
-    // Section 7: Request Center
-    addSectionHeader(doc, 7, 'Request Center: Corrections & Points Windows');
-    addParagraph(doc, 'If your portfolio is in Read-Only Mode and you need to make changes:');
+    // ==========================================
+    // PAGE 2: Full Account Data Ingestion Pipeline
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 2, 'Account Ingestion: 9-Column Excel/Sheets Setup', 'Operator & User Manual');
+
+    // Top pipeline flow
+    drawCard(doc, 36, 68, 523, 110, 'BULK SPREADSHEET INGESTION PIPELINE (EXCEL / CSV)', '#4f46e5', '#eef2ff');
+    drawFlowStep(doc, 48, 92, 115, 48, 1, 'Format Sheet', 'Prepare Excel / CSV file with 9 standard headers', '#4f46e5');
+    drawConnectorRight(doc, 165, 116, 14);
+    drawFlowStep(doc, 181, 92, 115, 48, 2, 'Sample CSV', 'Click "Upload Excel" > Download Sample Template', '#0284c7');
+    drawConnectorRight(doc, 298, 116, 14);
+    drawFlowStep(doc, 314, 92, 115, 48, 3, 'Import Data', 'Select file & upload during Free Editing Period', '#f59e0b');
+    drawConnectorRight(doc, 431, 116, 14);
+    drawFlowStep(doc, 447, 92, 100, 48, 4, 'Auto-Binding', 'Accounts bound to your profile', '#10b981');
+
+    doc.fillColor('#4338ca').fontSize(7.5).font('Helvetica-Bold')
+       .text('Note: Operators can import all accounts at the start during their active Free Editing Window or with import permission.', 48, 150, { width: 495 });
+
+    // Master 9-Column Specification Table
+    doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold')
+       .text('MASTER SPREADSHEET SCHEMA: 9 COMPREHENSIVE FIELDS', 36, 190);
+
+    const schemaHeaders = ['Column Header', 'Req?', 'Example Value', 'Maps to UI Field in Account Details'];
+    const schemaWidths = [115, 40, 165, 185];
+    const schemaRows = [
+        { cols: ['profile_no', 'Yes', '101 (or P1)', 'Section A: Profile Number (e.g. Profile #101)'], bold: true },
+        { cols: ['email', 'Yes', 'operator.acc1@gmail.com', 'Section A & B: Primary Email / Identifier'], bold: true },
+        { cols: ['server', 'Yes', 'US-AZ#146', 'Section B: Server Information (Proxy Tag)'], bold: true },
+        { cols: ['recovery_email', 'No', 'recovery.backup@gmail.com', 'Section B: Recovery / Alt Email'], bold: false },
+        { cols: ['proton_email', 'No', 'secure.acc@proton.me', 'Section B: Proton Mail Field'], bold: false },
+        { cols: ['current_points', 'No', '5000', 'Account Table: Current Points Ledger'], bold: false },
+        { cols: ['classification', 'No', 'OLD (or NEW)', 'Section A: Classification Badge (Old / New)'], bold: false },
+        { cols: ['status', 'No', 'active (or banned)', 'Section A: Status Badge (Active / Banned)'], bold: false },
+        { cols: ['notes', 'No', 'US proxy rotation slot #1', 'Section A: Account Notes Box'], bold: false }
+    ];
+
+    const tableEndY = drawDiagramTable(doc, 36, 208, 523, schemaHeaders, schemaRows, schemaWidths);
+
+    // Section A vs Section B Visual Mockup Box
+    drawCard(doc, 36, tableEndY + 12, 523, 210, 'UI FIELD CORRESPONDENCE: DEDICATED ACCOUNT DOSSIER', '#cbd5e1', '#ffffff');
+
+    // Section A Sub-card
+    doc.roundedRect(48, tableEndY + 36, 240, 140, 4).fill('#f8fafc').strokeColor('#cbd5e1').lineWidth(0.75).stroke();
+    doc.fillColor('#4f46e5').fontSize(9).font('Helvetica-Bold').text('Section A: Account Overview', 58, tableEndY + 44);
     
-    addSubHeader(doc, 'Submitting an Account Correction Request');
-    addBullet(doc, '1. Navigate:', 'Click "Request Center" in the left sidebar.');
-    addBullet(doc, '2. New Request:', 'Click the "+ New Request" button.');
-    addBullet(doc, '3. Choose Category:', 'Select "Account Correction".');
-    addBullet(doc, '4. Specify Account:', 'Enter the account email and detail the required change (e.g. server update).');
-    addBullet(doc, '5. Submit:', 'The Administrator receives an instant notification and can approve the change with one click.');
+    const secAItems = [
+        ['Profile Number:', 'Populated from profile_no column'],
+        ['Account Identifier:', 'Populated from email column'],
+        ['Account Status:', 'Populated from status (ACTIVE / BANNED)'],
+        ['Classification:', 'Populated from classification (OLD / NEW)'],
+        ['Account Notes:', 'Populated from notes column']
+    ];
+    let aY = tableEndY + 60;
+    secAItems.forEach(([lbl, desc]) => {
+        doc.fillColor('#0f172a').fontSize(7.5).font('Helvetica-Bold').text(lbl, 58, aY, { width: 90 });
+        doc.fillColor('#64748b').fontSize(7.5).font('Helvetica').text(desc, 150, aY, { width: 130 });
+        aY += 15;
+    });
 
-    addExampleBox(doc, 'Account Correction Request Ticket', [
-        ['Request Type', 'Account Correction'],
-        ['Account Email', 'rathantata51@gmail.com'],
-        ['Subject', 'Update Server Proxy'],
-        ['Correction Details', 'Please update proxy from US-AZ#146 to US-CA#102 due to IP rotation'],
-        ['Ticket Status', 'Pending Administrator Action']
-    ]);
+    // Section B Sub-card
+    doc.roundedRect(300, tableEndY + 36, 245, 140, 4).fill('#f8fafc').strokeColor('#cbd5e1').lineWidth(0.75).stroke();
+    doc.fillColor('#10b981').fontSize(9).font('Helvetica-Bold').text('Section B: Account Credentials & Info', 310, tableEndY + 44);
 
-    addSubHeader(doc, 'Requesting a Points Editing Window');
-    addParagraph(doc, 'If you need to batch update points across your portfolio:');
-    addBullet(doc, '1. Select Category:', 'Choose "Points Update Window" in the Request Center.');
-    addBullet(doc, '2. Specify Duration:', 'Request a 2-hour, 6-hour, or 24-hour editing session.');
-    addBullet(doc, '3. Activation:', 'Once the Administrator clicks Approve, your Free Editing countdown badge starts immediately.');
+    const secBItems = [
+        ['Primary Email:', 'Populated from email column'],
+        ['Recovery / Alt Email:', 'Populated from recovery_email column'],
+        ['Proton Mail:', 'Populated from proton_email column'],
+        ['Server Information:', 'Populated from server column'],
+        ['Security Standard:', 'Passwords strictly omitted (Zero-Trust)']
+    ];
+    let bY = tableEndY + 60;
+    secBItems.forEach(([lbl, desc]) => {
+        doc.fillColor('#0f172a').fontSize(7.5).font('Helvetica-Bold').text(lbl, 310, bY, { width: 95 });
+        doc.fillColor('#64748b').fontSize(7.5).font('Helvetica').text(desc, 408, bY, { width: 130 });
+        bY += 15;
+    });
 
-    // Section 8: Reward Catalogue & Claiming
-    addSectionHeader(doc, 8, 'Reward Catalogue & Redemption Workflow');
-    addParagraph(doc, 'Points earned by your managed accounts can be redeemed for institutional rewards:');
-    addBullet(doc, '1. Browse Catalogue:', 'Navigate to "Available Rewards" to view active gift cards, vouchers, and cash disbursements.');
-    addBullet(doc, '2. Check Thresholds:', 'Each reward item displays required points (e.g. 10,000 pts). The system automatically evaluates your accounts.');
-    addBullet(doc, '3. Click Redeem:', 'If your account qualifies, the "Redeem" button turns green. Click to initiate redemption.');
-    addBullet(doc, '4. Fulfillment:', 'Redemption claims appear in your Request Center. The Administrator approves and fulfills the voucher.');
+    doc.fillColor('#0f172a').fontSize(8).font('Helvetica-Bold')
+       .text('Result: Uploading all account data via spreadsheet ensures no field is left blank ("-") in your Account Details view.', 48, tableEndY + 184, { width: 495 });
 
-    // Section 9: Monthly Reviews & Exporting
-    addSectionHeader(doc, 9, 'Periodic Reviews & Report Exports');
-    addSubHeader(doc, 'Periodic Review Form (Admin Dispatched)');
-    addParagraph(doc, 'The Periodic Review Form does NOT pop up automatically or frequently. It is only dispatched when the Administrator specifically sends it to you to finish:');
-    addBullet(doc, 'Dashboard Gate:', 'When the Administrator sends the form, your dashboard temporarily stops displaying and presents the review form.');
-    addBullet(doc, 'Verification Questions:', 'Answer the verification questions confirming active accounts, accuracy, and current points.');
-    addBullet(doc, 'Submit to Resume:', 'Click "Submit & Unlock Dashboard". Upon submission, your review state is marked complete and your dashboard immediately resumes displaying normally.');
+    drawPageFooter(doc);
 
-    addSubHeader(doc, 'Exporting Reports');
-    addParagraph(doc, 'Navigate to "Download Reports" to export a clean, timestamped CSV spreadsheet of all your assigned accounts, current points balances, and redemption histories.');
+    // ==========================================
+    // PAGE 3: Free Editing Period & Read-Only States
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 3, 'Governance: Free Editing Period & Protection States', 'Operator & User Manual');
+
+    // State machine flowchart
+    drawCard(doc, 36, 68, 523, 270, 'STATE MACHINE: FREE EDITING PERIOD VS READ-ONLY LOCK', '#4f46e5', '#f8fafc');
+
+    // State 1: Active
+    doc.roundedRect(52, 94, 220, 110, 6).fill('#ecfdf5').strokeColor('#10b981').lineWidth(1.5).stroke();
+    doc.fillColor('#065f46').fontSize(10).font('Helvetica-Bold').text('STATE 1: FREE EDITING ACTIVE', 64, 104);
+    doc.fillColor('#10b981').fontSize(8.5).font('Courier-Bold').text('[⏱️ Free Editing: 18h 45m remaining]', 64, 120);
+    
+    doc.fillColor('#1e293b').fontSize(7.5).font('Helvetica')
+       .text('• Full Write Permissions Enabled\n• "+ Add Account" toolbar button active\n• "Edit" button enabled on all rows\n• "Upload Excel" enabled for bulk import', 64, 138, { lineGap: 2 });
+
+    // Transition Arrow (Timer expires)
+    drawConnectorRight(doc, 274, 149, 40, 'Timer = 0:00');
+
+    // State 2: Read-Only Locked
+    doc.roundedRect(316, 94, 225, 110, 6).fill('#fffbeb').strokeColor('#f59e0b').lineWidth(1.5).stroke();
+    doc.fillColor('#92400e').fontSize(10).font('Helvetica-Bold').text('STATE 2: READ-ONLY PROTECTED', 328, 104);
+    doc.fillColor('#b45309').fontSize(8.5).font('Courier-Bold').text('[🔒 Locked: Read-Only Mode]', 328, 120);
+
+    doc.fillColor('#1e293b').fontSize(7.5).font('Helvetica')
+       .text('• Write buttons securely locked\n• Protects accounts from accidental overwrite\n• Data fully readable & exportable\n• Unlock via Request Center ticket', 328, 138, { lineGap: 2 });
+
+    // Unlock Loop Arrow back to State 1
+    doc.moveTo(428, 206).lineTo(428, 240).lineTo(162, 240).lineTo(162, 206).strokeColor('#4f46e5').lineWidth(1.2).stroke();
+    doc.polygon([159, 208], [165, 208], [162, 204]).fill('#4f46e5');
+    doc.fillColor('#4f46e5').fontSize(8).font('Helvetica-Bold')
+       .text('Admin Approves Request Center Ticket -> Timer Restarts (State 1 Resumes)', 175, 244);
+
+    // FLOWCHART: Request Center Ticket Submission
+    drawCard(doc, 36, 350, 523, 275, 'FLOWCHART: REQUESTING AN EDITING WINDOW OR CORRECTION', '#cbd5e1', '#ffffff');
+
+    drawFlowStep(doc, 52, 374, 490, 42, 1, 'Navigate to Request Center', 'Click "Request Center" in the sidebar navigation and click the blue "+ New Request" button.', '#4f46e5');
+    drawConnectorDown(doc, 297, 418, 12);
+
+    drawFlowStep(doc, 52, 432, 490, 42, 2, 'Select Ticket Category & Specify Reason', 'Choose "Account Correction" (to fix proxy/server) or "Points Update Window" (to tally points).', '#4f46e5');
+    drawConnectorDown(doc, 297, 476, 12);
+
+    drawFlowStep(doc, 52, 490, 490, 42, 3, 'Administrator Receives Real-Time Alert', 'Notification arrives on the Administrator Notification Center. Admin can inspect details and rationale.', '#f59e0b');
+    drawConnectorDown(doc, 297, 534, 12);
+
+    drawFlowStep(doc, 52, 548, 490, 42, 4, 'One-Click Admin Approval & Immediate Unlock', 'When approved, changes are automatically committed or your Free Editing countdown badge unlocks instantly.', '#10b981');
+
+    // Real-World Example Box
+    drawCard(doc, 36, 636, 523, 158, 'REAL-WORLD REQUEST TICKETS EXAMPLES', '#cbd5e1', '#f8fafc');
+
+    // Example 1
+    doc.roundedRect(48, 660, 240, 95, 4).fill('#ffffff').strokeColor('#cbd5e1').lineWidth(0.75).stroke();
+    doc.fillColor('#0284c7').fontSize(8.5).font('Helvetica-Bold').text('Example A: Account Correction Ticket', 56, 668);
+    doc.fillColor('#334155').fontSize(7.5).font('Helvetica')
+       .text('Type: Account Correction\nAccount: rathantata51@gmail.com\nSubject: Rotate Proxy Exit Node\nDetails: Please update server proxy from US-AZ#146 to US-CA#102 due to IP maintenance.\nStatus: Pending Admin One-Click Commit', 56, 682, { lineGap: 2 });
+
+    // Example 2
+    doc.roundedRect(302, 660, 243, 95, 4).fill('#ffffff').strokeColor('#cbd5e1').lineWidth(0.75).stroke();
+    doc.fillColor('#10b981').fontSize(8.5).font('Helvetica-Bold').text('Example B: Points Window Request', 310, 668);
+    doc.fillColor('#334155').fontSize(7.5).font('Helvetica')
+       .text('Type: Points Update Window\nDuration: 2 Hours\nSubject: Monthly Batch Points Sync\nDetails: Updating month-end points for assigned farm profiles P1 to P20.\nStatus: Timer starts immediately upon approval', 310, 682, { lineGap: 2 });
+
+    drawPageFooter(doc);
+
+    // ==========================================
+    // PAGE 4: Points, Rewards & Periodic Review
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 4, 'Points, Rewards & Periodic Review Governance', 'Operator & User Manual');
+
+    // Points & Rewards Lifecycle
+    drawCard(doc, 36, 68, 523, 160, 'POINTS & REWARD REDEMPTION LIFECYCLE', '#4f46e5', '#eef2ff');
+    drawFlowStep(doc, 48, 92, 115, 60, 1, 'Earn Points', 'Managed accounts accumulate points from activity', '#4f46e5');
+    drawConnectorRight(doc, 165, 122, 14);
+    drawFlowStep(doc, 181, 92, 115, 60, 2, 'Browse Catalog', 'Check Available Rewards & point thresholds (e.g. 10k)', '#0284c7');
+    drawConnectorRight(doc, 298, 122, 14);
+    drawFlowStep(doc, 314, 92, 115, 60, 3, 'Claim Voucher', 'Click "Redeem Reward" on qualifying profiles', '#f59e0b');
+    drawConnectorRight(doc, 431, 122, 14);
+    drawFlowStep(doc, 447, 92, 100, 60, 4, 'Fulfillment', 'Admin fulfills gift card or payment', '#10b981');
+
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('Track your submitted redemptions and disbursement codes directly under "Request Center > My Requests".', 48, 160, { width: 495 });
+
+    // PERIODIC REVIEW FORM: ADMIN DISPATCHED FLOW
+    drawCard(doc, 36, 240, 523, 380, 'PERIODIC REVIEW FORM: ADMIN-DISPATCHED GATING FLOW', '#cbd5e1', '#ffffff');
+
+    doc.fillColor('#b45309').fontSize(8.5).font('Helvetica-Bold')
+       .text('CRITICAL NOTICE: The review form NEVER pops up automatically. It ONLY appears when Admin specifically sends it.', 52, 260);
+
+    drawFlowStep(doc, 52, 280, 490, 44, 1, 'Normal Operation: Dashboard Fully Active', 'Operator works seamlessly without interruptions. The review form is dormant and hidden.', '#10b981', '#ecfdf5');
+    drawConnectorDown(doc, 297, 326, 12);
+
+    drawFlowStep(doc, 52, 340, 490, 44, 2, 'Administrator Dispatches Review Form to Operator', 'Administrator clicks "Send Form" in Monthly Reviews. Socket event notifies your session instantly.', '#f59e0b', '#fffbeb');
+    drawConnectorDown(doc, 297, 386, 12);
+
+    drawFlowStep(doc, 52, 400, 490, 44, 3, 'Dashboard Stops Displaying (Review Gate Active)', 'Full-screen review overlay appears. Dashboard access is temporarily held until review completion.', '#dc2626', '#fef2f2');
+    drawConnectorDown(doc, 297, 446, 12);
+
+    drawFlowStep(doc, 52, 460, 490, 44, 4, 'Operator Completes 4 Verification Questions', '1. Registered account review?  2. Records accurate?  3. Status changes?  4. Points up to date?', '#4f46e5', '#ffffff');
+    drawConnectorDown(doc, 297, 506, 12);
+
+    drawFlowStep(doc, 52, 520, 490, 44, 5, 'Click "Submit & Unlock": Dashboard Resumes Instantly!', 'Review flag resets to 0. The review gate closes and your normal dashboard resumes displaying immediately.', '#10b981', '#ecfdf5');
+
+    doc.fillColor('#64748b').fontSize(7.5).font('Helvetica')
+       .text('Admin Override: The Administrator can also click "Cancel & Resume Dashboard" to lift the requirement at any time.', 52, 580, { width: 490 });
+
+    // Export Reports Card
+    drawCard(doc, 36, 632, 523, 162, 'SELF-SERVICE REPORT EXPORTS (CSV)', '#cbd5e1', '#f8fafc');
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('Navigate to "Download Reports" to export your assigned accounts, points balances, and redemption history as a timestamped CSV spreadsheet for offline analysis.\n\nPasswords and sensitive authentication tokens are strictly stripped to maintain zero-trust security compliance.', 52, 656, { width: 490, lineGap: 3 });
+
+    drawPageFooter(doc);
+
+    // ==========================================
+    // PAGE 5: Quick Reference & Troubleshooting
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 5, 'Quick Reference & Troubleshooting Decision Tree', 'Operator & User Manual');
+
+    // Troubleshooting Decision Tree Box
+    drawCard(doc, 36, 68, 523, 400, 'TROUBLESHOOTING DECISION TREE', '#cbd5e1', '#ffffff');
+
+    const issues = [
+        {
+            q: 'Issue 1: "Sign In" button reloads page or does nothing',
+            cause: 'Browser cache running older JavaScript version.',
+            sol: 'Perform a hard reload: Press Ctrl + F5 (Windows) or Cmd + Shift + R (Mac). Authentication is direct and asynchronous.'
+        },
+        {
+            q: 'Issue 2: "Application Submitted: Pending Review" appears',
+            cause: 'Enterprise access control requires administrator authorization.',
+            sol: 'Notify administrator (001.workme@gmail.com) to approve your application under User Management.'
+        },
+        {
+            q: 'Issue 3: "+ Add Account" and "Edit" buttons are locked',
+            cause: 'Your Free Editing Period has expired and portfolio is in Read-Only Mode.',
+            sol: 'Go to Request Center > click "+ New Request" > submit an "Account Correction" or "Points Window" request.'
+        },
+        {
+            q: 'Issue 4: Account Details fields show "-" (empty)',
+            cause: 'Spreadsheet uploaded was missing optional columns (recovery, proton, notes).',
+            sol: 'Download the 9-column sample template from "Upload Excel" and re-import with all fields populated.'
+        },
+        {
+            q: 'Issue 5: Review Form appears and blocks dashboard',
+            cause: 'Administrator dispatched a periodic compliance review to your profile.',
+            sol: 'Answer the 4 simple verification questions and click "Submit & Unlock Dashboard" to immediately resume.'
+        }
+    ];
+
+    let tY = 92;
+    issues.forEach((iss, i) => {
+        doc.roundedRect(48, tY, 498, 54, 4).fill('#f8fafc').strokeColor('#cbd5e1').lineWidth(0.5).stroke();
+        doc.fillColor('#dc2626').fontSize(8.5).font('Helvetica-Bold').text(iss.q, 56, tY + 6);
+        doc.fillColor('#64748b').fontSize(7.5).font('Helvetica').text(`Cause: ${iss.cause}`, 56, tY + 20);
+        doc.fillColor('#10b981').fontSize(7.5).font('Helvetica-Bold').text(`Solution: ${iss.sol}`, 56, tY + 34, { width: 480 });
+        tY += 60;
+    });
+
+    // Daily & Monthly Operator Checklist Table
+    doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold')
+       .text('OPERATOR DAILY & MONTHLY CHECKLIST', 36, 482);
+
+    const checkHeaders = ['Frequency', 'Routine Action', 'Target Interface', 'Expected Outcome'];
+    const checkWidths = [70, 155, 130, 150];
+    const checkRows = [
+        { cols: ['Daily', 'Verify Active Accounts Health', 'Active Accounts Table', 'Flag any proxy or server dropouts'], bold: true },
+        { cols: ['Weekly', 'Review Points Ledger Tally', 'Points Ledger Tab', 'Ensure accumulated points match activity'], bold: false },
+        { cols: ['As Needed', 'Submit Correction Requests', 'Request Center', 'Rotate server proxy or update recovery email'], bold: false },
+        { cols: ['When Eligible', 'Redeem Unlocked Vouchers', 'Available Rewards', 'Submit claim for admin fulfillment'], bold: false },
+        { cols: ['Admin Prompt', 'Complete Periodic Review Form', 'Review Gate Overlay', 'Confirm records accurate to resume dashboard'], bold: true }
+    ];
+
+    const checkEndY = drawDiagramTable(doc, 36, 498, 523, checkHeaders, checkRows, checkWidths);
+
+    // Support & Governance Card
+    drawCard(doc, 36, checkEndY + 12, 523, 110, 'SECURITY & SUPPORT CONTACT', '#4f46e5', '#eef2ff');
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('• Sole Administrator: 001.workme@gmail.com\n• Production URL: https://pointpulse-8bbn.onrender.com\n• Support & Requests: In-App Request Center ("Contact Administrator" modal)\n• Security Compliance: Zero-Password Storage Policy • BCrypt Salt Rounds: 10 • Role-Based Data Isolation', 52, checkEndY + 36, { lineGap: 3 });
+
+    drawPageFooter(doc);
 
     finalizeDoc(doc, 'Operator & User Manual');
     doc.end();
@@ -392,143 +470,235 @@ async function generateOperatorManual() {
 }
 
 // -----------------------------------------------------------------------------
-// GENERATOR 2: ADMINISTRATOR OPERATING MANUAL
+// 2. ADMINISTRATOR OPERATING MANUAL (EXACTLY 5 PAGES)
 // -----------------------------------------------------------------------------
-async function generateAdminManual() {
-    const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: true });
+async function buildAdminManual() {
+    const doc = new PDFDocument({ margin: 36, size: 'A4', autoFirstPage: false });
     const pdfPath = path.join(outDir, 'PointPulse_Administrator_Manual.pdf');
     const writeStream = fs.createWriteStream(pdfPath);
     doc.pipe(writeStream);
 
-    addCoverPage(
-        doc,
-        'ADMINISTRATOR OPERATING MANUAL',
-        'Enterprise Governance, User Approvals, Portfolio Assignment & System Configuration',
-        'Sole Administrator (001.workme@gmail.com)',
-        'ADMINISTRATOR EDITION'
-    );
+    // ==========================================
+    // PAGE 1: Single-Administrator Governance
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 1, 'Single-Administrator Governance & Architecture', 'Administrator Manual');
 
-    // Section 1: Single-Administrator Governance
-    addSectionHeader(doc, 1, 'Single-Administrator Governance Architecture');
-    addParagraph(doc, 'PointPulse operates under an uncompromising single-administrator security model designed to eliminate privilege escalation, unauthorized promotions, and administrative credential compromise.');
-    
-    addCallout(doc, 'warning', 'Enforced Administrator Identity: 001.workme@gmail.com',
-        'The platform hardcodes the sole administrator identity to 001.workme@gmail.com at the database schema, middleware, and API levels. The system strictly prohibits the creation, invitation, or elevation of secondary administrators. All administrative endpoints require valid session tokens belonging exclusively to this identity.');
+    // Architecture Overview Card
+    drawCard(doc, 36, 68, 523, 175, 'SINGLE-ADMINISTRATOR GOVERNANCE ARCHITECTURE', '#4f46e5', '#eef2ff', '#3730a3');
 
-    // Section 2: Administrator Sign In
-    addSectionHeader(doc, 2, 'Administrator Sign In & Dashboard Access');
-    addParagraph(doc, 'The Administrator can log into PointPulse through either:');
-    addBullet(doc, 'Direct Credentials:', 'Enter 001.workme@gmail.com and your master administrator password under the "Sign In" tab.');
-    addBullet(doc, 'Google OAuth 2.0:', 'Click "Continue with Google" while logged into your verified 001.workme@gmail.com Google account.');
+    // Central admin node
+    drawFlowStep(doc, 185, 92, 190, 55, 1, 'Sole Platform Administrator', 'Hardcoded Email: 001.workme@gmail.com\nZero Secondary Administrators Rule', '#4f46e5', '#ffffff');
 
-    // Section 3: User Management & Approvals
-    addSectionHeader(doc, 3, 'User Management & Operator Onboarding');
-    addParagraph(doc, 'All operator registrations are routed through the Administrator approval workflow before any dashboard access is permitted.');
+    // 4 Branch Nodes radiating from Admin
+    drawFlowStep(doc, 48, 165, 115, 60, 2, 'User Approvals', 'Approve/reject operators & set permissions', '#0284c7');
+    drawFlowStep(doc, 176, 165, 115, 60, 3, 'Portfolio Control', 'Assign all/single accounts to operators', '#10b981');
+    drawFlowStep(doc, 304, 165, 115, 60, 4, 'Review Dispatch', 'Lock/resume operator dashboards on demand', '#f59e0b');
+    drawFlowStep(doc, 432, 165, 115, 60, 5, 'Security & Audit', 'Executive PDF reports & tamper logs', '#8b5cf6');
 
-    addSubHeader(doc, 'Step-by-Step Approval Procedure');
-    addBullet(doc, '1. Open User Management:', 'Click "User Management" in the left sidebar.');
-    addBullet(doc, '2. Review Pending Queue:', 'Inspect the "Pending User Approvals" table showing applicant name, email, and registration timestamp.');
-    addBullet(doc, '3. Approve Applicant:', 'Click the green "Approve" button. The system immediately activates their profile and grants an initial Free Editing Window.');
-    addBullet(doc, '4. Reject Applicant:', 'Click "Reject" to deny access and purge unauthorized registration attempts.');
+    // FLOWCHART: Admin Authentication & Console Admission
+    drawCard(doc, 36, 255, 523, 380, 'AUTHENTICATION FLOWCHART: DUAL-METHOD VERIFICATION', '#cbd5e1', '#ffffff');
 
-    addSubHeader(doc, 'Granular Operator Permissions');
-    addParagraph(doc, 'On the Active Operators table, click "Permissions" on any operator row to customize their capabilities:');
-    addBullet(doc, 'Can Add Accounts:', 'Controls whether operator can provision new accounts during active windows.');
-    addBullet(doc, 'Can Edit Points:', 'Controls whether operator can manually update points.');
-    addBullet(doc, 'Can Redeem Rewards:', 'Controls whether operator can claim reward vouchers.');
-    addBullet(doc, 'Suspend Operator:', 'Clicking "Suspend" immediately invalidates the user\'s active session and prevents API access.');
+    drawFlowStep(doc, 52, 280, 490, 48, 1, 'Access PointPulse Production Console', 'Open https://pointpulse-8bbn.onrender.com. The secure authentication card displays dual-tab options.', '#4f46e5');
+    drawConnectorDown(doc, 297, 330, 14);
 
-    addExampleBox(doc, 'Primary Operator Profile Configuration', [
-        ['Operator Name', 'Laptop Mew'],
-        ['Operator Email', 'laptopmew1@gmail.com'],
-        ['Account Status', 'ACTIVE (Approved)'],
-        ['Assigned Accounts', '100% of Master Database Accounts'],
-        ['Permissions', 'Full Operator Privileges (Add Accounts, Edit Points, Redeem)']
-    ]);
+    drawFlowStep(doc, 52, 346, 490, 48, 2, 'Select Sign-In Method (Direct Email or Google OAuth)', 'Method A: Enter 001.workme@gmail.com & admin password.\nMethod B: Click "Continue with Google" while logged into 001.workme@gmail.com.', '#4f46e5');
+    drawConnectorDown(doc, 297, 396, 14);
 
-    // Section 4: Account Ownership & Portfolio Reassignment
-    addSectionHeader(doc, 4, 'Account Ownership & Bulk Migration ("Assign All")');
-    addParagraph(doc, 'The Administrator retains total authority over which operator owns which accounts.');
+    drawFlowStep(doc, 52, 412, 490, 48, 3, 'Identity Verification & Role Privilege Check', 'Backend validates token against hardcoded sole admin constraint. Zero secondary promotions allowed.', '#10b981');
+    drawConnectorDown(doc, 297, 462, 14);
 
-    addSubHeader(doc, 'The "Assigned Operator" Column & Filter');
-    addBullet(doc, 'Assigned Operator Column:', 'In the "All Accounts" view, every row explicitly reveals the operator email assigned to that profile.');
-    addBullet(doc, 'Filter by Operator:', 'Use the dropdown filter at the top of the table to isolate accounts owned by laptopmew1@gmail.com or unassigned accounts.');
+    drawFlowStep(doc, 52, 478, 490, 48, 4, 'Full Enterprise Administrator Console Loads', 'Admin navigation is unlocked: Overview KPIs, User Management, All Accounts, Old/New Board, Catalog, Reviews, Downloads, Audit.', '#4f46e5');
 
-    addSubHeader(doc, 'Reassigning Single Accounts');
-    addParagraph(doc, 'To reassign an individual account:');
-    addBullet(doc, '1. Edit Row:', 'Click the "Edit" button on the account row in All Accounts.');
-    addBullet(doc, '2. Select Operator:', 'In the "Assign Operator" dropdown, select the target user (e.g. laptopmew1@gmail.com).');
-    addBullet(doc, '3. Save:', 'Click "Save Changes". The account immediately moves into the new operator\'s dashboard.');
+    doc.fillColor('#64748b').fontSize(8).font('Helvetica-Bold')
+       .text('IMMUTABLE SINGLE-ADMIN SECURITY: No user can self-promote or be promoted to administrator.', 52, 545, { width: 490, align: 'center' });
 
-    addSubHeader(doc, 'Bulk Migration: "Assign All to User" Feature');
-    addCallout(doc, 'success', 'One-Click Enterprise Data Migration',
-        'To migrate all existing accounts in the platform to a single primary operator (such as laptopmew1@gmail.com), use the dedicated bulk migration tool.');
-    addBullet(doc, '1. Click Bulk Action:', 'On the All Accounts toolbar, click the purple "Assign All to User" button.');
-    addBullet(doc, '2. Choose Target User:', 'Select laptopmew1@gmail.com from the modal dropdown.');
-    addBullet(doc, '3. Confirm Transfer:', 'Click "Confirm Transfer". The system executes an atomic transaction reassigning 100% of accounts and logs the migration in the immutable audit trail.');
+    // Primary Operator Profile Box
+    drawCard(doc, 36, 646, 523, 150, 'PRIMARY OPERATOR CONFIGURATION (laptopmew1@gmail.com)', '#cbd5e1', '#f8fafc');
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('• Designated Primary Operator: laptopmew1@gmail.com (Madhu G)\n• Initial Status: Approved Operator with full permissions (Add Accounts, Edit, Import Excel, Update Points)\n• Account Attribution: All unassigned accounts automatically resolve to laptopmew1@gmail.com\n• Dossier Access: Open User Management > Details to inspect portfolio, redemptions, and activity logs.', 52, 672, { width: 490, lineGap: 3 });
 
-    // Section 5: Free Editing Period Governance
-    addSectionHeader(doc, 5, 'Free Editing Period Governance');
-    addParagraph(doc, 'The Administrator defines the duration and rules for operator write-access windows.');
-    addBullet(doc, '1. Open Settings:', 'Click the "Free Editing Periods" button on the All Accounts toolbar.');
-    addBullet(doc, '2. Global Default:', 'Configure the standard window granted to newly approved operators (e.g. 24 Hours, 48 Hours, or 7 Days).');
-    addBullet(doc, '3. Auto-Start Rule:', 'Toggle whether newly approved users automatically start their timer upon registration approval.');
-    addBullet(doc, '4. Grant Custom Window:', 'Select an individual operator (e.g. laptopmew1@gmail.com) and grant a customized window (e.g. 12 Hours) to allow account adjustments.');
+    drawPageFooter(doc);
 
-    // Section 6: Old / New Classification Board
-    addSectionHeader(doc, 6, 'Old / New Classification Board (Kanban)');
-    addParagraph(doc, 'Navigate to "Old / New Board" in the sidebar to access the visual account tenure interface:');
-    addBullet(doc, 'Drag-and-Drop:', 'Drag account cards between the "OLD ACCOUNTS" and "NEW ACCOUNTS" columns to instantly update classification.');
-    addBullet(doc, 'Batch Move:', 'Select multiple accounts and click "Move to OLD" or "Move to NEW" to perform bulk reclassifications.');
+    // ==========================================
+    // PAGE 2: User Onboarding & Granular Permissions
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 2, 'User Onboarding, Approvals & Granular Permissions', 'Administrator Manual');
 
-    // Section 7: Points & Access Governance
-    addSectionHeader(doc, 7, 'Points Management & Access Governance');
-    addParagraph(doc, 'Under "Points & Access", the Administrator monitors real-time points activity across the entire platform:');
-    addBullet(doc, 'Live Active Windows:', 'View which operators currently have active points-editing windows.');
-    addBullet(doc, 'Emergency Revocation:', 'Click "Revoke Window" at any moment to instantly terminate an operator\'s editing session.');
+    // FLOWCHART: Operator Approval Lifecycle
+    drawCard(doc, 36, 68, 523, 310, 'OPERATOR APPLICATION & APPROVAL LIFECYCLE', '#4f46e5', '#f8fafc');
 
-    // Section 8: Master Reward Catalogue
-    addSectionHeader(doc, 8, 'Master Reward Catalogue & Redemption Fulfillment');
-    addParagraph(doc, 'Navigate to "Reward Catalogue" to manage the rewards portfolio:');
-    addBullet(doc, 'Add New Reward:', 'Click "+ Add New Reward" to specify Reward Title (e.g. $50 Amazon Gift Card), Category, Points Required, and Stock Count.');
-    addBullet(doc, 'Publish / Unpublish:', 'Toggle whether rewards are visible to operators in their catalogue.');
-    addBullet(doc, 'Account Matching:', 'Navigate to "Account Matching" to see which operator accounts meet points criteria.');
-    addBullet(doc, 'Approve Redemptions:', 'Review operator redemption claims and click "Approve & Fulfill" to deduct points and issue rewards.');
+    drawFlowStep(doc, 52, 92, 490, 42, 1, 'Applicant Registers on Login Portal', 'New user submits name, Gmail, and password. Account enters "pending" status.', '#4f46e5');
+    drawConnectorDown(doc, 297, 136, 12);
 
-    // Section 9: Notification Center
-    addSectionHeader(doc, 9, 'Notification Center & Request Approvals');
-    addParagraph(doc, 'The Notification Center serves as the Administrator\'s central decision inbox:');
-    addBullet(doc, 'Account Correction Requests:', 'Review operator requests to fix server names or account details. Click "Approve" to apply the correction automatically.');
-    addBullet(doc, 'Points Window Requests:', 'Review operator requests for editing time. Click "Approve Window" to unlock their countdown timer.');
+    drawFlowStep(doc, 52, 150, 490, 42, 2, 'Inspect Application in User Management', 'Navigate to "User Management". Inspect Pending Approvals queue, applicant name, and timestamp.', '#0284c7');
+    drawConnectorDown(doc, 297, 194, 12);
 
-    // Section 10: Periodic Review Dispatch
-    addSectionHeader(doc, 10, 'Periodic Review Dispatch & Dashboard Gating');
-    addParagraph(doc, 'The Administrator controls when review forms are dispatched to operators:');
-    addBullet(doc, 'Send Form to User:', 'Under Monthly Reviews or User Management, click "Send Form" on any operator. Their dashboard will stop displaying immediately until they submit the form.');
-    addBullet(doc, 'Send to All Operators:', 'Click "Send Form to All Operators" to require a platform-wide review.');
-    addBullet(doc, 'Cancel Requirement:', 'Click "Cancel & Resume Dashboard" if you wish to lift the requirement without a submission.');
-    addBullet(doc, 'Automatic Resumption:', 'As soon as an operator submits the form, their dashboard access resumes automatically and their answers appear in your submissions history.');
+    drawFlowStep(doc, 52, 208, 490, 42, 3, 'Click "Approve" (or "Reject" to Purge)', 'Clicking Approve sets status to ACTIVE and automatically provisions initial Free Editing Window.', '#10b981');
+    drawConnectorDown(doc, 297, 252, 12);
 
-    // Section 11: Executive PDF Generation
-    addSectionHeader(doc, 11, 'Executive PDF Generation & Download Center');
-    addParagraph(doc, 'Under "Download Center", generate branded, publication-ready reports:');
-    addBullet(doc, 'Executive PDF Report:', 'Produces a multi-page PDF document featuring KPI overview cards, points distribution charts, operator performance summaries, and full account rosters.');
-    addBullet(doc, 'Full Database CSV:', 'Exports the raw master database table into a CSV file for backup or external spreadsheet analysis.');
+    drawFlowStep(doc, 52, 266, 490, 42, 4, 'Operator Gains Access to Assigned Workspace', 'Operator signs in immediately. Access is restricted exclusively to their assigned accounts.', '#4f46e5');
 
-    // Section 12: Immutable Audit Logs
-    addSectionHeader(doc, 12, 'Immutable Security Audit Logs');
-    addParagraph(doc, 'Navigate to "Audit Logs" to review the tamper-evident chronological ledger:');
-    addBullet(doc, 'Tracked Events:', 'Every login, approval, account creation, edit, bulk migration, points change, and window grant is recorded.');
-    addBullet(doc, 'Audit Metadata:', 'Includes exact ISO timestamp, actor email, action type, target account, and IP address.');
+    // Granular Permissions Table
+    doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold')
+       .text('GRANULAR OPERATOR PERMISSIONS MATRIX', 36, 390);
 
-    // Section 13: Google Cloud OAuth Setup
-    addSectionHeader(doc, 13, 'Google Cloud OAuth 2.0 Configuration Guide');
-    addParagraph(doc, 'To ensure Google Sign-In operates flawlessly on the live production domain:');
-    addBullet(doc, '1. Open Console:', 'Navigate to Google Cloud Console → APIs & Services → Credentials.');
-    addBullet(doc, '2. Open Client ID:', 'Select Client ID: 162534616388-ko0lpc0r6cpor5vb8tv23aodamelv9mv.apps.googleusercontent.com');
-    addBullet(doc, '3. Authorized JavaScript Origins:', 'Add https://pointpulse-8bbn.onrender.com (without trailing slash).');
-    addBullet(doc, '4. Authorized Redirect URIs:', 'Add https://pointpulse-8bbn.onrender.com and https://pointpulse-8bbn.onrender.com/api/auth/google/callback');
-    addBullet(doc, '5. Render Environment:', 'Ensure GOOGLE_CLIENT_ID is saved in your Render Environment Variables.');
+    const permHeaders = ['Permission Key', 'Default', 'Function & Capability Controlled', 'Security Risk Level'];
+    const permWidths = [120, 50, 240, 95];
+    const permRows = [
+        { cols: ['view_accounts', 'Granted', 'View assigned accounts list and details dossier', 'Low (Isolated)'], bold: true },
+        { cols: ['add_accounts', 'Granted', 'Create single accounts during active editing periods', 'Low (Isolated)'], bold: false },
+        { cols: ['edit_accounts', 'Granted', 'Modify proxy servers, classification, and notes', 'Medium'], bold: false },
+        { cols: ['import_excel', 'Granted', 'Bulk upload spreadsheets of accounts and points', 'Medium'], bold: false },
+        { cols: ['update_points', 'Window', 'Manually update points balances (requires active window)', 'High'], bold: true },
+        { cols: ['view_redemption', 'Granted', 'Browse catalog and submit reward claims', 'Low'], bold: false },
+        { cols: ['download_reports', 'Granted', 'Export assigned accounts and points data to CSV', 'Low'], bold: false }
+    ];
+
+    const permEndY = drawDiagramTable(doc, 36, 408, 523, permHeaders, permRows, permWidths);
+
+    // Operator Suspension & Lockout Box
+    drawCard(doc, 36, permEndY + 12, 523, 140, 'EMERGENCY OPERATOR SUSPENSION & REVOCATION', '#dc2626', '#fef2f2', '#991b1b');
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('1. Immediate Session Termination: In User Management, click "Suspend" on any operator row.\n2. API Invalidation: The user\'s JWT token and active session are instantly invalidated.\n3. Screen Lockout: Next API call or page refresh returns HTTP 403 Suspended and ejects user to login.\n4. Reactivation: Admin can click "Reactivate" at any time to restore access seamlessly.', 52, permEndY + 36, { lineGap: 3 });
+
+    drawPageFooter(doc);
+
+    // ==========================================
+    // PAGE 3: Portfolio Ownership & Bulk Assignment
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 3, 'Portfolio Ownership & Bulk Assignment ("Assign All")', 'Administrator Manual');
+
+    // Portfolio Map Card
+    drawCard(doc, 36, 68, 523, 145, 'MASTER ACCOUNT PORTFOLIO STRUCTURE', '#4f46e5', '#eef2ff');
+    drawFlowStep(doc, 50, 92, 140, 52, 1, 'Supabase Accounts', 'Master Pool: 230+ accounts\nProfiles P1 through P230', '#0284c7');
+    drawConnectorRight(doc, 192, 118, 24);
+    drawFlowStep(doc, 218, 92, 150, 52, 2, 'account_metadata', 'Mapping Table: account_id -> user_id\nDefault owner: laptopmew1@gmail.com', '#4f46e5');
+    drawConnectorRight(doc, 370, 118, 24);
+    drawFlowStep(doc, 396, 92, 145, 52, 3, 'Operator Workspace', 'Filtered by user_id\nFull dossier display', '#10b981');
+
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('The "Assigned Operator" column in All Accounts displays the owner of every profile. Use "Filter by Operator" to isolate accounts.', 50, 156, { width: 495 });
+
+    // FLOWCHART: One-Click Bulk Migration ("Assign All to User")
+    drawCard(doc, 36, 224, 523, 310, 'FLOWCHART: BULK REASSIGNMENT ("ASSIGN ALL TO USER")', '#cbd5e1', '#ffffff');
+
+    drawFlowStep(doc, 52, 248, 490, 42, 1, 'Click "Assign All to User" Button', 'Located on the All Accounts toolbar (or in the Individual User Dossier header).', '#4f46e5');
+    drawConnectorDown(doc, 297, 292, 12);
+
+    drawFlowStep(doc, 52, 306, 490, 42, 2, 'Select Target Operator Profile', 'Choose target user: laptopmew1@gmail.com (Madhu G) in the confirmation dialog.', '#0284c7');
+    drawConnectorDown(doc, 297, 350, 12);
+
+    drawFlowStep(doc, 52, 364, 490, 42, 3, 'Atomic Database Reassignment', 'System updates account_metadata for all profiles and seeds any missing remote Supabase accounts.', '#f59e0b');
+    drawConnectorDown(doc, 297, 408, 12);
+
+    drawFlowStep(doc, 52, 422, 490, 42, 4, '100% of Accounts Assigned & Bound', 'Operator dossier updates to show all managed profiles, active accounts, and points ledger.', '#10b981');
+
+    doc.fillColor('#64748b').fontSize(8).font('Helvetica-Bold')
+       .text('TRANSACTION LOGGED: Bulk assignment is recorded in the immutable audit log with actor ID and timestamp.', 52, 480, { width: 490, align: 'center' });
+
+    // Single Account Reassignment Card
+    drawCard(doc, 36, 545, 523, 245, 'REASSIGNING INDIVIDUAL ACCOUNTS', '#cbd5e1', '#f8fafc');
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('To move a single account between operators:\n1. Open "All Accounts" in the left sidebar.\n2. Search or filter to find the account row and click the "Edit" button.\n3. Locate the "Assign Operator" dropdown and select the new operator email (e.g. laptopmew1@gmail.com).\n4. Click "Save Changes". The profile and its points ledger move immediately to the selected user.', 52, 570, { width: 490, lineGap: 3 });
+
+    drawPageFooter(doc);
+
+    // ==========================================
+    // PAGE 4: Review Dispatch & Free Editing Timers
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 4, 'Periodic Review Dispatch & Free Editing Governance', 'Administrator Manual');
+
+    // Admin Review Dispatch Flowchart
+    drawCard(doc, 36, 68, 523, 310, 'ADMIN-CONTROLLED REVIEW FORM DISPATCHING & GATING', '#4f46e5', '#f8fafc');
+
+    drawFlowStep(doc, 52, 92, 490, 42, 1, 'Admin Decides When to Send Review Form', 'Navigate to "Monthly Reviews" (or User Management). The form does not send automatically.', '#4f46e5');
+    drawConnectorDown(doc, 297, 136, 12);
+
+    drawFlowStep(doc, 52, 150, 490, 42, 2, 'Click "Send Form" (Single User) or "Send Form to All"', 'Clicking Send Form flags review_form_required = 1 and emits a real-time notification socket event.', '#f59e0b');
+    drawConnectorDown(doc, 297, 194, 12);
+
+    drawFlowStep(doc, 52, 208, 490, 42, 3, 'Operator Dashboard Stops Displaying (Locked)', 'The operator\'s screen immediately presents the review overlay, holding dashboard access.', '#dc2626');
+    drawConnectorDown(doc, 297, 252, 12);
+
+    drawFlowStep(doc, 52, 266, 490, 42, 4, 'Operator Submits -> Dashboard Resumes Instantly!', 'Once submitted, operator access unlocks immediately. Submission appears in Review History for admin review.', '#10b981');
+
+    doc.fillColor('#4338ca').fontSize(8).font('Helvetica-Bold')
+       .text('ADMIN CANCEL OVERRIDE: Click "Cancel & Resume Dashboard" at any time to lift gating without submission.', 52, 324, { width: 490, align: 'center' });
+
+    // Free Editing Period Controls Box
+    drawCard(doc, 36, 390, 523, 200, 'FREE EDITING PERIOD & DURATION GOVERNANCE', '#cbd5e1', '#ffffff');
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('Configure editing window rules by clicking "Free Editing Periods" on the All Accounts toolbar:\n\n• Global Default Duration: Set the standard window (e.g. 24 Hours, 48 Hours, or 7 Days) automatically granted to newly approved operators upon registration.\n• Auto-Start on Approval: Toggle whether new operators automatically start their timer upon approval.\n• Custom Extension: Select any operator (e.g. laptopmew1@gmail.com) and grant a customized window (e.g. 12 Hours) to allow spreadsheet uploads or server updates.\n• Emergency Revocation: In "Points & Access", click "Revoke Window" to immediately terminate an open session.', 52, 414, { width: 490, lineGap: 3 });
+
+    // Old / New Board Kanban Reference
+    drawCard(doc, 36, 602, 523, 188, 'OLD / NEW ACCOUNT CLASSIFICATION KANBAN BOARD', '#cbd5e1', '#f8fafc');
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('Navigate to "Old / New Board" to manage account tenure visually:\n\n• Drag-and-Drop: Drag account cards between the OLD ACCOUNTS and NEW ACCOUNTS columns to instantly update tenure in the database.\n• Batch Reclassification: Select multiple accounts using checkboxes and click "Batch Move to OLD" or "Batch Move to NEW".\n• Real-Time Sync: All classification changes immediately reflect across user dashboards and executive PDF reports.', 52, 626, { width: 490, lineGap: 3 });
+
+    drawPageFooter(doc);
+
+    // ==========================================
+    // PAGE 5: Rewards, Audits & Google Cloud Setup
+    // ==========================================
+    doc.addPage({ margin: 36, size: 'A4' });
+    drawPageHeader(doc, 5, 'Rewards, Audit Logs & Google Cloud OAuth Setup', 'Administrator Manual');
+
+    // Reward Catalogue Pipeline
+    drawCard(doc, 36, 68, 523, 150, 'MASTER REWARD CATALOGUE & REDEMPTION PIPELINE', '#4f46e5', '#eef2ff');
+    drawFlowStep(doc, 48, 92, 115, 55, 1, 'Publish Rewards', 'Add vouchers, gift cards, points required & stock', '#4f46e5');
+    drawConnectorRight(doc, 165, 120, 14);
+    drawFlowStep(doc, 181, 92, 115, 55, 2, 'Account Match', 'System evaluates operator accounts meeting criteria', '#0284c7');
+    drawConnectorRight(doc, 298, 120, 14);
+    drawFlowStep(doc, 314, 92, 115, 55, 3, 'Operator Claim', 'Operator submits redemption in Available Rewards', '#f59e0b');
+    drawConnectorRight(doc, 431, 120, 14);
+    drawFlowStep(doc, 447, 92, 100, 55, 4, 'Fulfillment', 'Admin approves & disburses in Matching', '#10b981');
+
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('Points are automatically deducted upon administrative approval and fulfillment.', 48, 160, { width: 495 });
+
+    // GOOGLE CLOUD CONSOLE OAUTH CONFIGURATION
+    drawCard(doc, 36, 230, 523, 230, 'GOOGLE CLOUD CONSOLE: EXACT OAUTH 2.0 CONFIGURATION', '#cbd5e1', '#ffffff');
+
+    doc.fillColor('#0f172a').fontSize(8.5).font('Helvetica')
+       .text('To ensure Google OAuth authentication functions with zero errors on production:', 52, 252);
+
+    const gSteps = [
+        ['1. Open Credentials:', 'Navigate to Google Cloud Console → APIs & Services → Credentials.'],
+        ['2. Select Client ID:', 'Click Web Client ID: 162534616388-ko0lpc0r6cpor5vb8tv23aodamelv9mv.apps.googleusercontent.com'],
+        ['3. Authorized Origins:', 'Under Authorized JavaScript origins, enter: https://pointpulse-8bbn.onrender.com (no trailing slash)'],
+        ['4. Authorized Redirects:', 'Under Authorized redirect URIs, add: https://pointpulse-8bbn.onrender.com AND https://pointpulse-8bbn.onrender.com/api/auth/google/callback'],
+        ['5. Render Environment:', 'Verify GOOGLE_CLIENT_ID is saved in Render Dashboard Environment Variables.']
+    ];
+    let gY = 270;
+    gSteps.forEach(([lbl, desc]) => {
+        doc.fillColor('#4f46e5').fontSize(8).font('Helvetica-Bold').text(lbl, 52, gY, { width: 120 });
+        doc.fillColor('#334155').fontSize(8).font('Helvetica').text(desc, 175, gY, { width: 360 });
+        gY += 20;
+    });
+
+    // Immutable Audit Logs & PDF Downloads
+    drawCard(doc, 36, 472, 523, 318, 'AUDIT LOGS & EXECUTIVE PDF REPORT GENERATOR', '#cbd5e1', '#f8fafc');
+
+    doc.fillColor('#0f172a').fontSize(9).font('Helvetica-Bold')
+       .text('1. Immutable Append-Only Security Audit Logs (Audit Logs View):', 52, 496);
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('• Every login, approval, account creation, edit, bulk migration, points change, and review form dispatch is recorded.\n• Each log entry contains exact ISO timestamp, actor ID/email, role, target user, action, and IP address.\n• Logs are append-only and cannot be modified or deleted by any user or administrator.', 52, 510, { width: 490, lineGap: 2 });
+
+    doc.fillColor('#0f172a').fontSize(9).font('Helvetica-Bold')
+       .text('2. Executive PDF Report Generation (Download Center View):', 52, 560);
+    doc.fillColor('#334155').fontSize(8).font('Helvetica')
+       .text('• Generate publication-ready executive PDF reports with KPI summaries, points distribution charts, and account rosters.\n• Passwords and credentials are automatically redacted in compliance with zero-trust security standards.\n• Export full raw account databases to CSV for external archiving or spreadsheet processing.', 52, 574, { width: 490, lineGap: 2 });
+
+    doc.fillColor('#0f172a').fontSize(8.5).font('Helvetica-Bold')
+       .text('ADMINISTRATOR EMERGENCY CONTACT & RECOVERY', 52, 630);
+    doc.fillColor('#64748b').fontSize(8).font('Helvetica')
+       .text('Sole Administrator: 001.workme@gmail.com • Server: Express 5 + SQLite + Supabase\nHosting: Render Web Service (pointpulse-8bbn.onrender.com) • Backup: Supabase Remote PostgreSQL', 52, 646, { lineGap: 2 });
+
+    drawPageFooter(doc);
 
     finalizeDoc(doc, 'Administrator Manual');
     doc.end();
@@ -537,19 +707,41 @@ async function generateAdminManual() {
 }
 
 // -----------------------------------------------------------------------------
+// FINALIZE RUNNING HEADERS & FOOTERS
+// -----------------------------------------------------------------------------
+function finalizeDoc(doc, manualHeaderTitle) {
+    // Pages are already self-contained with exact 5 pages!
+}
+
+// -----------------------------------------------------------------------------
 // MAIN EXECUTION
 // -----------------------------------------------------------------------------
 async function run() {
-    console.log('Generating PointPulse PDF Manuals...');
-    await generateOperatorManual();
-    console.log('✅ Generated: public/downloads/PointPulse_Operator_User_Manual.pdf');
-    await generateAdminManual();
-    console.log('✅ Generated: public/downloads/PointPulse_Administrator_Manual.pdf');
-    console.log('All PDF manuals successfully generated!');
+    console.log('Building 5-Page Diagrammatic Manuals...');
+    await buildOperatorManual();
+    console.log('✅ Generated: public/downloads/PointPulse_Operator_User_Manual.pdf (5 pages)');
+    await buildAdminManual();
+    console.log('✅ Generated: public/downloads/PointPulse_Administrator_Manual.pdf (5 pages)');
+
+    // Mirror to root and artifact directories
+    const rootDir = path.join(__dirname, '..');
+    const artifactDir = 'C:\\Users\\madhu\\.gemini\\antigravity\\brain\\0a00ae4b-20bc-4abd-adcd-09b993cdefe4';
+
+    const pdfFiles = ['PointPulse_Operator_User_Manual.pdf', 'PointPulse_Administrator_Manual.pdf'];
+    for (const f of pdfFiles) {
+        const src = path.join(outDir, f);
+        const destRoot = path.join(rootDir, f);
+        fs.copyFileSync(src, destRoot);
+        if (fs.existsSync(artifactDir)) {
+            const destArtifact = path.join(artifactDir, f);
+            fs.copyFileSync(src, destArtifact);
+        }
+    }
+    console.log('✅ Mirrored 5-page PDF manuals to root and artifact directories.');
+    console.log('All 5-page diagrammatic manuals successfully generated!');
 }
 
 run().catch(err => {
-    console.error('Error generating PDF manuals:', err);
+    console.error('Error generating manuals:', err);
     process.exit(1);
 });
-

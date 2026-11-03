@@ -1529,10 +1529,10 @@
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
-                    <a href="/downloads/PointPulse_Operator_User_Manual.pdf" download class="btn primary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" title="Download User Manual PDF">
+                    <a href="/downloads/PointPulse_Operator_User_Manual.pdf" download class="btn primary-btn" id="btn-manual-dl-user-pdf" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" title="Download User Manual PDF">
                         <i class="fa-solid fa-file-pdf"></i> User Manual (PDF)
                     </a>
-                    <a href="/downloads/PointPulse_Administrator_Manual.pdf" download class="btn primary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" title="Download Admin Manual PDF">
+                    <a href="/downloads/PointPulse_Administrator_Manual.pdf" download class="btn primary-btn hidden" id="btn-manual-dl-admin-pdf" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" title="Download Admin Manual PDF">
                         <i class="fa-solid fa-file-shield"></i> Admin Manual (PDF)
                     </a>
                     <a href="/MANUAL.md" download="PointPulse_Manual.md" class="btn secondary-btn" style="padding: 0.35rem 0.55rem; font-size: 0.78rem;" title="Download Markdown document">
@@ -1550,7 +1550,7 @@
                 <button id="btn-manual-tab-user" class="btn primary-btn" onclick="switchManualTab('user')" style="padding: 0.4rem 1rem; font-size: 0.85rem; border-radius: 6px; font-weight: 600;">
                     <i class="fa-solid fa-user-check"></i> Operator / User Manual
                 </button>
-                <button id="btn-manual-tab-admin" class="btn secondary-btn" onclick="switchManualTab('admin')" style="padding: 0.4rem 1rem; font-size: 0.85rem; border-radius: 6px; font-weight: 600;">
+                <button id="btn-manual-tab-admin" class="btn secondary-btn hidden" onclick="switchManualTab('admin')" style="padding: 0.4rem 1rem; font-size: 0.85rem; border-radius: 6px; font-weight: 600;">
                     <i class="fa-solid fa-shield-halved"></i> Administrator Manual
                 </button>
                 <button id="btn-manual-tab-faq" class="btn secondary-btn" onclick="switchManualTab('faq')" style="padding: 0.4rem 1rem; font-size: 0.85rem; border-radius: 6px; font-weight: 600;">
