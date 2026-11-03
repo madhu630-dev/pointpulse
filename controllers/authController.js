@@ -26,7 +26,7 @@ async function verifyGoogleIdToken(token) {
         // Fall back to direct Google tokeninfo endpoint
     }
 
-    // 2. Direct tokeninfo verification with Google OAuth2 API
+    // 2. Direct tokeninfo or userinfo verification with Google OAuth2 API
     try {
         const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`);
         if (response.ok) {
@@ -37,7 +37,21 @@ async function verifyGoogleIdToken(token) {
             throw new Error('Google email is not verified.');
         }
     } catch (e) {
-        // If external network is blocked or testing environment token
+        // If not an ID token, attempt verification as OAuth2 access token
+    }
+
+    try {
+        const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (userinfoRes.ok) {
+            const profile = await userinfoRes.json();
+            if (profile && (profile.email_verified === true || profile.email_verified === 'true')) {
+                return profile;
+            }
+        }
+    } catch (e) {
+        // External check failed
     }
 
     // 3. Test tokens strictly restricted to automated testing suite only (NODE_ENV === 'test')

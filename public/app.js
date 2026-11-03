@@ -123,6 +123,8 @@ async function checkSession() {
 }
 
 let googleClientId = '';
+let googleTokenClient = null;
+let isGoogleGSIInitialized = false;
 
 // Fetch backend authentication configuration (Google Client ID)
 async function loadAuthConfig() {
@@ -131,7 +133,9 @@ async function loadAuthConfig() {
         if (res.ok) {
             const data = await res.json();
             googleClientId = data.googleClientId || '';
-            initializeGoogleGSI();
+            if (googleClientId) {
+                initializeGoogleGSI();
+            }
         }
     } catch (e) {
         console.warn('Failed to fetch auth configuration:', e);
@@ -140,32 +144,62 @@ async function loadAuthConfig() {
 
 // Initialize Google Identity Services (GSI)
 function initializeGoogleGSI() {
-    if (!googleClientId || !window.google || !google.accounts || !google.accounts.id) return;
-    try {
-        google.accounts.id.initialize({
-            client_id: googleClientId,
-            callback: handleGoogleCredentialResponse,
-            auto_select: false,
-            ux_mode: 'popup'
-        });
+    if (!googleClientId) return;
 
-        const btnContainer = document.getElementById('google-btn-container');
-        if (btnContainer) {
-            google.accounts.id.renderButton(btnContainer, {
-                theme: 'outline',
-                size: 'large',
-                width: 360,
-                text: 'continue_with',
-                shape: 'rectangular',
-                logo_alignment: 'center'
+    if (!window.google || !google.accounts) {
+        // Retry when Google library script finishes loading
+        setTimeout(initializeGoogleGSI, 400);
+        return;
+    }
+
+    try {
+        // 1. Initialize Google Identity Services for official Rendered Button
+        if (google.accounts.id) {
+            google.accounts.id.initialize({
+                client_id: googleClientId,
+                callback: handleGoogleCredentialResponse,
+                auto_select: false,
+                ux_mode: 'popup'
+            });
+
+            const renderTarget = document.getElementById('g-render-target');
+            if (renderTarget && renderTarget.childElementCount === 0) {
+                google.accounts.id.renderButton(renderTarget, {
+                    theme: 'outline',
+                    size: 'large',
+                    width: 340,
+                    text: 'continue_with',
+                    shape: 'rectangular',
+                    logo_alignment: 'center'
+                });
+            }
+        }
+
+        // 2. Initialize OAuth 2.0 Token Client (Opens immediate account popup on custom button click)
+        if (google.accounts.oauth2) {
+            googleTokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: googleClientId,
+                scope: 'openid email profile',
+                callback: async (tokenResponse) => {
+                    if (tokenResponse.error) {
+                        console.error('Google OAuth popup error:', tokenResponse);
+                        showAuthError(`Google Sign-In failed: ${tokenResponse.error_description || tokenResponse.error}`);
+                        return;
+                    }
+                    if (tokenResponse.access_token) {
+                        await processGoogleLogin(tokenResponse.access_token);
+                    }
+                }
             });
         }
+
+        isGoogleGSIInitialized = true;
     } catch (err) {
         console.error('Google Identity initialization error:', err);
     }
 }
 
-// Google OAuth Handler (Callback from Google Identity Services)
+// Google OAuth Handler (Callback from Google Identity Services rendered button)
 window.handleGoogleCredentialResponse = async function(response) {
     if (!response || !response.credential) {
         showAuthError('Invalid Google credential received.');
@@ -174,23 +208,59 @@ window.handleGoogleCredentialResponse = async function(response) {
     await processGoogleLogin(response.credential);
 };
 
-// Initiate Google Login popup or prompt
+// Initiate Google Login popup or prompt on button click
 function initiateGoogleLogin() {
-    if (googleClientId && window.google && google.accounts && google.accounts.id) {
+    if (!googleClientId) {
+        openModal('modal-auth-setup');
+        return;
+    }
+
+    // A) First preference: Use Google OAuth2 Token Client popup (guaranteed instant popup on click)
+    if (googleTokenClient) {
         try {
-            google.accounts.id.prompt((notification) => {
-                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                    console.log('Google prompt not displayed/skipped');
+            googleTokenClient.requestAccessToken({ prompt: 'select_account' });
+            return;
+        } catch (e) {
+            console.warn('googleTokenClient request failed, falling back:', e);
+        }
+    }
+
+    // B) If token client is not yet instantiated, attempt immediate initialization
+    if (window.google && google.accounts && google.accounts.oauth2) {
+        try {
+            googleTokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: googleClientId,
+                scope: 'openid email profile',
+                callback: async (tokenResponse) => {
+                    if (tokenResponse.error) {
+                        showAuthError(`Google Sign-In failed: ${tokenResponse.error_description || tokenResponse.error}`);
+                        return;
+                    }
+                    if (tokenResponse.access_token) {
+                        await processGoogleLogin(tokenResponse.access_token);
+                    }
                 }
             });
+            googleTokenClient.requestAccessToken({ prompt: 'select_account' });
+            return;
         } catch (e) {
-            console.error('Google prompt exception:', e);
+            console.warn('Instant tokenClient initialization failed:', e);
         }
-    } else if (!googleClientId) {
-        openModal('modal-auth-setup');
-    } else {
-        showAuthError('Google Identity Services is loading. Please wait a moment and try again.');
     }
+
+    // C) Fallback to google.accounts.id prompt
+    if (window.google && google.accounts && google.accounts.id) {
+        google.accounts.id.prompt((notification) => {
+            if (notification.isNotDisplayed()) {
+                const reason = notification.getNotDisplayedReason();
+                console.warn('Google One Tap not displayed:', reason);
+                showAuthError(`Google prompt not displayed (${reason}). Please check Authorized Origins in Google Cloud Console.`);
+            }
+        });
+        return;
+    }
+
+    showAuthError('Google Identity Services is loading. Please wait 2 seconds and try again.');
 }
 
 // Process Google Login on Backend
@@ -2194,3 +2264,14 @@ checkSession();
 window.addEventListener('load', () => {
     if (googleClientId) initializeGoogleGSI();
 });
+
+// Periodic retry to ensure GSI binds as soon as Google library script downloads
+let gsiRetryCount = 0;
+const gsiCheckInterval = setInterval(() => {
+    gsiRetryCount++;
+    if (window.google && google.accounts && googleClientId && !isGoogleGSIInitialized) {
+        initializeGoogleGSI();
+        clearInterval(gsiCheckInterval);
+    }
+    if (gsiRetryCount > 25) clearInterval(gsiCheckInterval);
+}, 300);
