@@ -33,6 +33,9 @@ const getAccounts = async (req, res) => {
         const adminUserRow = await get(`SELECT id, name, email FROM app_users WHERE role = 'admin' LIMIT 1`);
         const defaultAdminId = adminUserRow ? adminUserRow.id : 1;
 
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
+
         const allUsers = await all(`SELECT id, name, email, display_name, role FROM app_users`);
         const userMap = new Map();
         allUsers.forEach(u => userMap.set(u.id, u));
@@ -93,8 +96,8 @@ const getAccounts = async (req, res) => {
             const accRedemptions = redemptionsByAccount[acc.id] || [];
 
             const meta = metaMap.get(acc.id);
-            // Strictly assign unmapped legacy accounts to the Administrator, NEVER to non-admin users
-            const assignedUserId = meta ? meta.user_id : defaultAdminId;
+            // Assign accounts to mapped user or default to primary operator laptopmew1@gmail.com
+            const assignedUserId = meta ? meta.user_id : primaryOperatorId;
             const ownerObj = userMap.get(assignedUserId) || adminUserRow || { id: defaultAdminId, name: 'Sole Administrator', email: ADMIN_EMAIL, role: 'admin' };
             let classification = meta ? meta.classification : null;
             if (!classification) {

@@ -778,6 +778,54 @@ const assignAccountsToUser = async (req, res) => {
     }
 };
 
+// Bulk assign ALL accounts to a specific platform user
+const assignAllAccountsToUser = async (req, res) => {
+    const targetUserId = parseInt(req.params.id || req.body.userId);
+    try {
+        const targetUser = await get(`SELECT * FROM app_users WHERE id = ?`, [targetUserId]);
+        if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+        // Update all existing records in account_metadata
+        await run(`UPDATE account_metadata SET user_id = ?, updated_at = datetime('now')`, [targetUserId]);
+
+        // Also fetch all Supabase accounts and ensure they are all in account_metadata for targetUserId
+        let count = 0;
+        try {
+            const { data: accounts } = await supabase.from('Users').select('id');
+            if (accounts && accounts.length > 0) {
+                count = accounts.length;
+                for (const acc of accounts) {
+                    await run(
+                        `INSERT INTO account_metadata (account_id, user_id, updated_at)
+                         VALUES (?, ?, datetime('now'))
+                         ON CONFLICT(account_id) DO UPDATE SET user_id = excluded.user_id, updated_at = datetime('now')`,
+                        [acc.id, targetUserId]
+                    );
+                }
+            }
+        } catch (e) {
+            console.error('Supabase query error during assign all:', e);
+        }
+
+        // Audit log
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, result)
+             VALUES (?, ?, 'admin', ?, 'Assigned ALL platform accounts to user', ?, 'success')`,
+            [req.user.id, req.user.email, targetUserId, JSON.stringify({ count, targetUserEmail: targetUser.email })]
+        );
+
+        res.json({
+            success: true,
+            message: `All platform accounts successfully moved to ${targetUser.name} (${targetUser.email})`,
+            targetUser: { id: targetUser.id, name: targetUser.name, email: targetUser.email },
+            count
+        });
+    } catch (error) {
+        console.error('Assign All Accounts Error:', error);
+        res.status(500).json({ error: 'Failed to assign all accounts' });
+    }
+};
+
 // Get global and user-specific editing periods
 const getEditingPeriodConfig = async (req, res) => {
     try {
@@ -967,6 +1015,7 @@ module.exports = {
     markNotificationRead,
     getAuditLogs,
     assignAccountsToUser,
+    assignAllAccountsToUser,
     getEditingPeriodConfig,
     saveEditingPeriodConfig,
     reviewAccountCorrectionRequest

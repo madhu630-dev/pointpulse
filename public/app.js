@@ -1182,6 +1182,56 @@ function filterAllAccountsTable() {
     `).join('');
 }
 
+async function assignAllAccountsToOperator() {
+    let users = window._allPlatformUsers || [];
+    if (users.length === 0) {
+        try {
+            const res = await fetch('/api/admin/users', { headers: { 'Authorization': `Bearer ${currentToken}` } });
+            if (res.ok) {
+                users = await res.json();
+                window._allPlatformUsers = users;
+            }
+        } catch (e) {}
+    }
+
+    const defaultTarget = users.find(u => u.email.toLowerCase() === 'laptopmew1@gmail.com') || users.find(u => u.role !== 'admin') || users[0];
+    const defaultEmail = defaultTarget ? defaultTarget.email : 'laptopmew1@gmail.com';
+
+    const targetEmail = prompt(
+        'Move ALL platform accounts to an operator.\n\nEnter the operator Gmail address:\n(Default: laptopmew1@gmail.com)',
+        defaultEmail
+    );
+
+    if (!targetEmail || !targetEmail.trim()) return;
+
+    const matched = users.find(u => u.email.toLowerCase() === targetEmail.trim().toLowerCase());
+    if (!matched) {
+        showToast('User Not Found', `No registered user found with email "${targetEmail.trim()}".`, 'warning');
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to move ALL accounts to ${matched.displayName || matched.name} (${matched.email})?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/admin/users/${matched.id}/claim-all-accounts`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('All Accounts Assigned', data.message || `All accounts moved to ${matched.email}`);
+            loadAllAccounts();
+        } else {
+            showToast('Error', data.error || 'Failed to assign accounts', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Request failed', 'danger');
+    }
+}
+window.assignAllAccountsToOperator = assignAllAccountsToOperator;
+
 // -----------------------------------------------------------------------------
 // DEDICATED ACCOUNT DETAILS PAGE (ADMIN & USER)
 // -----------------------------------------------------------------------------

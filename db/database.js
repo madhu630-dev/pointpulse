@@ -451,6 +451,37 @@ async function initSchema() {
     }
 
     console.log(`[PointPulse DB] Single Administrator verified: ${adminUser.email} (ID: ${adminUser.id})`);
+
+    // Provision & ensure user 'laptopmew1@gmail.com' exists, is approved, and owns the accounts dataset
+    const primaryOperatorEmail = 'laptopmew1@gmail.com';
+    let operatorUser = await get(`SELECT * FROM app_users WHERE lower(email) = ?`, [primaryOperatorEmail.toLowerCase()]);
+    if (!operatorUser) {
+        const res = await run(
+            `INSERT INTO app_users (google_id, email, name, display_name, role, status, terms_accepted, terms_accepted_at, approved_at)
+             VALUES (?, ?, ?, ?, 'user', 'approved', 1, datetime('now'), datetime('now'))`,
+            [`operator_${primaryOperatorEmail}`, primaryOperatorEmail, 'Madhu (Operator)', 'Madhu G']
+        );
+        operatorUser = await get(`SELECT * FROM app_users WHERE id = ?`, [res.lastID]);
+    } else if (operatorUser.status !== 'approved') {
+        await run(`UPDATE app_users SET status = 'approved', approved_at = datetime('now') WHERE id = ?`, [operatorUser.id]);
+        operatorUser.status = 'approved';
+    }
+
+    // Provision operator permissions for laptopmew1@gmail.com
+    const operatorPerms = [
+        'view_accounts', 'view_old_accounts', 'view_new_accounts', 'submit_requests', 
+        'view_redemption', 'add_accounts', 'edit_accounts', 'import_excel', 'update_points'
+    ];
+    for (const p of operatorPerms) {
+        await run(
+            `INSERT OR IGNORE INTO user_permissions (user_id, permission_key, granted_by) VALUES (?, ?, ?)`,
+            [operatorUser.id, p, adminUser.id]
+        );
+    }
+
+    // Move all accounts in account_metadata to laptopmew1@gmail.com
+    await run(`UPDATE account_metadata SET user_id = ?, updated_at = datetime('now')`, [operatorUser.id]);
+    console.log(`[PointPulse DB] All accounts successfully assigned to operator: ${operatorUser.email} (ID: ${operatorUser.id})`);
 }
 
 // Check and establish initial schema

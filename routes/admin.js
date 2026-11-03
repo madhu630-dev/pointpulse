@@ -18,6 +18,8 @@ router.post('/users/:id/permissions', adminController.updateUserPermissions);
 router.post('/users/:id/temporary-window', adminController.createTemporaryAccessWindow);
 router.post('/users/:id/rewards-visibility', adminController.setUserRewardVisibility);
 router.post('/users/:id/assign-accounts', adminController.assignAccountsToUser);
+router.post('/users/:id/claim-all-accounts', adminController.assignAllAccountsToUser);
+router.post('/assign-all-accounts', adminController.assignAllAccountsToUser);
 router.get('/editing-periods', adminController.getEditingPeriodConfig);
 router.post('/editing-periods', adminController.saveEditingPeriodConfig);
 router.post('/accounts/correction-review', adminController.reviewAccountCorrectionRequest);
