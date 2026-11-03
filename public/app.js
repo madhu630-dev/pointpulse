@@ -523,6 +523,11 @@ function downloadExcelTemplate() {
     showToast('Template Downloaded', 'Sample CSV template downloaded successfully.');
 }
 
+window.switchAuthTab = switchAuthTab;
+window.handleEmailPasswordLogin = handleEmailPasswordLogin;
+window.handleDirectUserRegister = handleDirectUserRegister;
+window.downloadExcelTemplate = downloadExcelTemplate;
+
 function showAuthError(msg) {
     const banner = document.getElementById('auth-error-banner');
     const txt = document.getElementById('auth-error-text');
@@ -2207,9 +2212,6 @@ function filterUserActiveTable() {
                 </tr>
             `).join('');
     }
-
-    renderUserClassifiedAccounts('old');
-}
 
     renderUserClassifiedAccounts('old');
 }

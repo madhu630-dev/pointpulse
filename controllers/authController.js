@@ -474,7 +474,7 @@ const login = async (req, res) => {
         // Regular User
         if (!user) {
             return res.status(401).json({ 
-                error: 'Account not found for this email address. Please click "Create Account" below to register.' 
+                error: 'Account not found for this email address. Please switch to the "Create Account" tab above to submit your registration application.' 
             });
         }
 

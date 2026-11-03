@@ -47,7 +47,7 @@
             </div>
 
             <!-- Form 1: Direct Email & Password Sign In (Admin & Users) -->
-            <form id="auth-login-form" onsubmit="handleEmailPasswordLogin(event)">
+            <form id="auth-login-form" onsubmit="handleEmailPasswordLogin(event); return false;">
                 <div class="auth-field-group">
                     <label for="login-email"><i class="fa-solid fa-envelope"></i> Google / Gmail Address *</label>
                     <input type="email" id="login-email" class="form-input" required placeholder="001.workme@gmail.com or your@gmail.com" autocomplete="username">
@@ -62,7 +62,7 @@
             </form>
 
             <!-- Form 2: Direct User Registration Form (Operator Applications) -->
-            <form id="auth-register-form" class="hidden" onsubmit="handleDirectUserRegister(event)" style="text-align: left;">
+            <form id="auth-register-form" class="hidden" onsubmit="handleDirectUserRegister(event); return false;" style="text-align: left;">
                 <div class="auth-field-group">
                     <label for="reg-direct-name"><i class="fa-solid fa-user"></i> Full Name *</label>
                     <input type="text" id="reg-direct-name" class="form-input" required placeholder="Alex Johnson">
