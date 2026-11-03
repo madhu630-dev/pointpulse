@@ -1690,17 +1690,6 @@ async function saveAccountRecord() {
         showToast('Error', 'Failed to save account', 'danger');
     }
 }
-            }
-            if (!document.getElementById('page-account-details').classList.contains('hidden') && accId) {
-                openAccountDetailsPage(accId);
-            }
-        } else {
-            showToast('Denied', data.error || 'Could not save account', 'danger');
-        }
-    } catch (e) {
-        showToast('Error', 'Save failed', 'danger');
-    }
-}
 
 // -----------------------------------------------------------------------------
 // EXCEL / CSV UPLOAD (ADMIN & USER)
