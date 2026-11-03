@@ -259,7 +259,7 @@ const getAccountDetails = async (req, res) => {
 // Create Account (Admin or user within free editing period / with add_accounts permission)
 const createAccount = async (req, res) => {
     const user = req.user;
-    const { profile_no, email, server, proton_email, status, notes, alternative_email, initial_points, classification } = req.body;
+    const { profile_no, profileNo, email, server, proton_email, status, notes, alternative_email, initial_points, currentPoints, classification } = req.body;
 
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
@@ -282,7 +282,8 @@ const createAccount = async (req, res) => {
         }
 
         // Determine profile number
-        let finalProfileNo = profile_no ? parseInt(profile_no) : null;
+        const pNum = profile_no || profileNo;
+        let finalProfileNo = pNum ? parseInt(pNum) : null;
         if (!finalProfileNo) {
             const { data: maxRow } = await supabase
                 .from('Users')
@@ -330,10 +331,11 @@ const createAccount = async (req, res) => {
         );
 
         // Insert initial points if provided
-        if (initial_points !== undefined && initial_points !== null) {
+        const initPts = (initial_points !== undefined && initial_points !== null) ? initial_points : currentPoints;
+        if (initPts !== undefined && initPts !== null) {
             await supabase.from('Points').insert([{
                 user_id: newAcc.id,
-                points: parseInt(initial_points) || 0,
+                points: parseInt(initPts) || 0,
                 date: 'Initial Setup',
                 updated_at: now
             }]);
@@ -342,7 +344,7 @@ const createAccount = async (req, res) => {
             await run(
                 `INSERT INTO points_audit_log (account_id, user_id, previous_points, new_points, difference, updated_by, updated_by_name, source)
                  VALUES (?, ?, 0, ?, ?, ?, ?, 'web_creation')`,
-                [newAcc.id, assignedUserId, parseInt(initial_points), parseInt(initial_points), user.id, user.name]
+                [newAcc.id, assignedUserId, parseInt(initPts), parseInt(initPts), user.id, user.name]
             );
         }
 
@@ -370,7 +372,8 @@ const createAccount = async (req, res) => {
 const updateAccount = async (req, res) => {
     const accountId = req.params.id;
     const user = req.user;
-    const { profile_no, email, server, status, notes, is_pinned, proton_email, alternative_email, classification } = req.body;
+    const { profile_no, profileNo, email, server, status, notes, is_pinned, proton_email, alternative_email, classification } = req.body;
+    const profNum = profile_no !== undefined ? profile_no : profileNo;
 
     try {
         const { data: existing, error: findErr } = await supabase
@@ -403,7 +406,7 @@ const updateAccount = async (req, res) => {
         }
 
         const updates = {};
-        if (profile_no !== undefined) updates.profile_no = profile_no;
+        if (profNum !== undefined) updates.profile_no = profNum;
         if (email) updates.email = email;
         if (server !== undefined) updates.server = server;
         if (status) updates.status = status;
@@ -629,7 +632,7 @@ const updatePoints = async (req, res) => {
 // Excel Upload (Admin or user within free editing period / with import_excel permission)
 const uploadExcel = async (req, res) => {
     const user = req.user;
-    const isFresh = req.body.freshUpload === 'true';
+    const isFresh = (req.body.freshUpload === 'true' || req.body.isFresh === 'true' || req.body.isFresh === true);
 
     // Enforce editing period restriction on backend
     if (user.role !== 'admin') {
@@ -765,7 +768,13 @@ const uploadExcel = async (req, res) => {
             [user.id, user.email, user.role, targetUserId, JSON.stringify({ syncedCount, filename: req.file.originalname })]
         );
 
-        res.json({ success: true, count: syncedCount });
+        res.json({
+            success: true,
+            count: syncedCount,
+            totalRows: syncedCount,
+            created: syncedCount,
+            updated: 0
+        });
     } catch (error) {
         console.error('Upload Excel Error:', error);
         res.status(500).json({ error: 'Error processing Excel upload' });

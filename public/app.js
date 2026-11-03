@@ -358,6 +358,171 @@ async function processGoogleLogin(credential) {
     }
 }
 
+// Direct Email + Password Auth Handlers & Tab Switching
+function switchAuthTab(tab) {
+    const tabSignIn = document.getElementById('tab-auth-signin');
+    const tabRegister = document.getElementById('tab-auth-register');
+    const formLogin = document.getElementById('auth-login-form');
+    const formRegister = document.getElementById('auth-register-form');
+    const errorBanner = document.getElementById('auth-error-banner');
+    if (errorBanner) errorBanner.classList.add('hidden');
+
+    if (tab === 'signin') {
+        tabSignIn?.classList.add('active');
+        tabRegister?.classList.remove('active');
+        formLogin?.classList.remove('hidden');
+        formRegister?.classList.add('hidden');
+    } else {
+        tabSignIn?.classList.remove('active');
+        tabRegister?.classList.add('active');
+        formLogin?.classList.add('hidden');
+        formRegister?.classList.remove('hidden');
+    }
+}
+
+async function handleEmailPasswordLogin(event) {
+    event.preventDefault();
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const btn = document.getElementById('btn-login-submit');
+    const errorBanner = document.getElementById('auth-error-banner');
+    if (errorBanner) errorBanner.classList.add('hidden');
+
+    if (!email || !password) {
+        showAuthError('Please enter both email and password.');
+        return;
+    }
+
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Signing in...`;
+        btn.disabled = true;
+    }
+
+    try {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            showAuthError(data.error || 'Authentication failed. Please check your credentials.');
+            if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
+            return;
+        }
+
+        currentToken = data.token;
+        localStorage.setItem('pointpulse_token', currentToken);
+        currentUser = data.user;
+
+        if (currentUser.role === 'admin') {
+            setupAdminDashboard();
+            showToast('Welcome, Administrator', `Signed in as ${currentUser.email}`);
+        } else if (data.status === 'pending' || currentUser.status === 'pending') {
+            showPendingScreen(currentUser);
+        } else if (currentUser.status === 'approved') {
+            setupUserDashboard();
+            showToast('Welcome Back', `Signed in as ${currentUser.name}`);
+        } else {
+            showView('auth');
+        }
+    } catch (err) {
+        console.error('Login error:', err);
+        showAuthError('Unable to connect to authentication server.');
+    } finally {
+        if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
+    }
+}
+
+async function handleDirectUserRegister(event) {
+    event.preventDefault();
+    const name = document.getElementById('reg-direct-name').value.trim();
+    const email = document.getElementById('reg-direct-email').value.trim().toLowerCase();
+    const password = document.getElementById('reg-direct-password').value;
+    const confirm = document.getElementById('reg-direct-confirm').value;
+    const phone = document.getElementById('reg-direct-phone').value.trim();
+    const purpose = document.getElementById('reg-direct-purpose').value;
+    const description = document.getElementById('reg-direct-description').value.trim();
+    const terms = document.getElementById('reg-direct-terms').checked;
+    const btn = document.getElementById('btn-register-submit');
+    const errorBanner = document.getElementById('auth-error-banner');
+    if (errorBanner) errorBanner.classList.add('hidden');
+
+    if (!terms) {
+        showAuthError('You must acknowledge the mandatory terms to proceed.');
+        return;
+    }
+
+    if (password !== confirm) {
+        showAuthError('Passwords do not match. Please re-enter your password.');
+        return;
+    }
+
+    if (password.length < 6) {
+        showAuthError('Password must be at least 6 characters.');
+        return;
+    }
+
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Submitting application...`;
+        btn.disabled = true;
+    }
+
+    try {
+        const res = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                displayName: name,
+                email,
+                password,
+                phone,
+                registrationPurpose: purpose,
+                accountManagementDescription: description,
+                termsAccepted: true
+            })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            showAuthError(data.error || 'Registration failed.');
+            if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
+            return;
+        }
+
+        currentToken = data.token;
+        localStorage.setItem('pointpulse_token', currentToken);
+        currentUser = data.user;
+
+        showPendingScreen(currentUser);
+        showToast('Application Submitted', 'Your registration is awaiting administrator approval.');
+    } catch (err) {
+        console.error('Registration error:', err);
+        showAuthError('Unable to submit registration application.');
+    } finally {
+        if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
+    }
+}
+
+function downloadExcelTemplate() {
+    const csvContent = "profile_no,email,server,status,alternative_email,initial_points,notes\n101,sample1@gmail.com,US-EAST#1,active,recovery1@gmail.com,1500,Sample account note\n102,sample2@gmail.com,US-WEST#2,active,recovery2@gmail.com,2000,Sample account note\n";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'pointpulse_accounts_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Template Downloaded', 'Sample CSV template downloaded successfully.');
+}
+
 function showAuthError(msg) {
     const banner = document.getElementById('auth-error-banner');
     const txt = document.getElementById('auth-error-text');

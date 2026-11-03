@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { OAuth2Client } = require('google-auth-library');
 const { get, run, all, ADMIN_EMAIL } = require('../db/database');
 const { JWT_SECRET } = require('../middleware/authMiddleware');
@@ -391,7 +392,295 @@ const logout = async (req, res) => {
     res.json({ success: true, message: 'Logged out successfully' });
 };
 
+// Direct Email + Password Login (Admin & Users)
+const login = async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const isAdmin = (cleanEmail === ADMIN_EMAIL.toLowerCase());
+
+    try {
+        let user = await get(`SELECT * FROM app_users WHERE lower(email) = ?`, [cleanEmail]);
+
+        if (isAdmin) {
+            // Sole Administrator Login
+            if (!user) {
+                // First-time administrator creation with chosen password
+                const hashed = await bcrypt.hash(password, 10);
+                const insertRes = await run(
+                    `INSERT INTO app_users (google_id, email, name, picture, role, status, password_hash, terms_accepted, terms_accepted_at, approved_at)
+                     VALUES (?, ?, 'Sole Administrator', '', 'admin', 'approved', ?, 1, datetime('now'), datetime('now'))`,
+                    [`admin_direct_${cleanEmail}`, cleanEmail, hashed]
+                );
+                user = await get(`SELECT * FROM app_users WHERE id = ?`, [insertRes.lastID]);
+            } else {
+                // If administrator exists but password_hash is not set yet
+                if (!user.password_hash) {
+                    const hashed = await bcrypt.hash(password, 10);
+                    await run(
+                        `UPDATE app_users SET password_hash = ?, role = 'admin', status = 'approved', updated_at = datetime('now') WHERE id = ?`,
+                        [hashed, user.id]
+                    );
+                    user.password_hash = hashed;
+                } else {
+                    const valid = await bcrypt.compare(password, user.password_hash);
+                    if (!valid) {
+                        return res.status(401).json({ error: 'Invalid administrator credentials.' });
+                    }
+                }
+            }
+
+            // Provision admin permissions
+            const adminPerms = [
+                'view_accounts', 'add_accounts', 'edit_accounts', 'update_points', 
+                'import_excel', 'view_redemption', 'download_reports', 
+                'view_old_accounts', 'view_new_accounts', 'submit_requests'
+            ];
+            for (const p of adminPerms) {
+                await run(`INSERT OR IGNORE INTO user_permissions (user_id, permission_key, granted_by) VALUES (?, ?, ?)`, [user.id, p, user.id]);
+            }
+
+            // Audit log
+            await run(
+                `INSERT INTO audit_logs (actor_id, actor_email, actor_role, action, result, ip_address)
+                 VALUES (?, ?, 'admin', 'Administrator Login via Email & Password', 'success', ?)`,
+                [user.id, user.email, req.ip || '']
+            );
+
+            const token = jwt.sign(
+                { id: user.id, email: user.email, role: 'admin', status: 'approved' },
+                JWT_SECRET,
+                { expiresIn: '7d' }
+            );
+
+            return res.json({
+                success: true,
+                token,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name || 'Sole Administrator',
+                    picture: user.picture || '',
+                    role: 'admin',
+                    status: 'approved',
+                    permissions: adminPerms
+                }
+            });
+        }
+
+        // Regular User
+        if (!user) {
+            return res.status(401).json({ 
+                error: 'Account not found for this email address. Please click "Create Account" below to register.' 
+            });
+        }
+
+        // Check password
+        if (!user.password_hash) {
+            // User was previously registered via Google OAuth without password
+            if (user.status === 'approved') {
+                const hashed = await bcrypt.hash(password, 10);
+                await run(`UPDATE app_users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?`, [hashed, user.id]);
+                user.password_hash = hashed;
+            } else {
+                return res.status(401).json({ 
+                    error: 'Password not set for this account. Please sign in with Google or contact the administrator.' 
+                });
+            }
+        } else {
+            const valid = await bcrypt.compare(password, user.password_hash);
+            if (!valid) {
+                return res.status(401).json({ error: 'Invalid password. Please check your credentials.' });
+            }
+        }
+
+        // Check account status
+        if (user.status === 'suspended') {
+            return res.status(403).json({
+                error: 'Your account has been suspended by the administrator. Please contact the administrator.',
+                status: 'suspended'
+            });
+        }
+
+        if (user.status === 'rejected') {
+            return res.status(403).json({
+                error: 'Your registration application was rejected by the administrator.',
+                status: 'rejected'
+            });
+        }
+
+        const token = jwt.sign(
+            { id: user.id, email: user.email, role: user.role, status: user.status },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        let userPerms = [];
+        if (user.status === 'approved') {
+            const now = new Date().toISOString();
+            const pRows = await all(
+                `SELECT permission_key FROM user_permissions WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?)`,
+                [user.id, now]
+            );
+            userPerms = pRows.map(p => p.permission_key);
+
+            await run(
+                `INSERT INTO audit_logs (actor_id, actor_email, actor_role, action, result, ip_address)
+                 VALUES (?, ?, 'user', 'User Login via Email & Password', 'success', ?)`,
+                [user.id, user.email, req.ip || '']
+            );
+        }
+
+        return res.json({
+            success: true,
+            token,
+            status: user.status,
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                picture: user.picture || '',
+                role: user.role,
+                status: user.status,
+                display_name: user.display_name,
+                submitted_at: user.created_at,
+                permissions: userPerms
+            }
+        });
+
+    } catch (error) {
+        console.error('Email Login Error:', error);
+        return res.status(500).json({ error: 'An error occurred during authentication.' });
+    }
+};
+
+// Direct User Registration with Email and Password
+const register = async (req, res) => {
+    const {
+        email,
+        password,
+        name,
+        displayName,
+        phone,
+        registrationPurpose,
+        accountManagementDescription,
+        termsAccepted
+    } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    if (password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters in length' });
+    }
+
+    if (!termsAccepted) {
+        return res.status(400).json({ error: 'You must acknowledge the terms and policies' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Prevent registering admin email via user register form
+    if (cleanEmail === ADMIN_EMAIL.toLowerCase()) {
+        return res.status(400).json({ error: 'Administrator email cannot be registered from this form. Please sign in directly.' });
+    }
+
+    try {
+        const existing = await get(`SELECT * FROM app_users WHERE lower(email) = ?`, [cleanEmail]);
+        if (existing) {
+            return res.status(400).json({ error: 'An account with this email address already exists. Please sign in.' });
+        }
+
+        const now = new Date().toISOString();
+        const userName = name || displayName || cleanEmail.split('@')[0];
+        const userDisplayName = displayName || userName;
+        const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const insertResult = await run(
+            `INSERT INTO app_users (
+                google_id, email, name, picture, role, status, 
+                password_hash, display_name, phone, registration_purpose, 
+                account_management_description, terms_accepted, 
+                policy_version, terms_accepted_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'user', 'pending', ?, ?, ?, ?, ?, 1, '1.0', ?, ?, ?)`,
+            [
+                `direct_${cleanEmail}`,
+                cleanEmail,
+                userName,
+                avatarUrl,
+                hashedPassword,
+                userDisplayName,
+                phone || '',
+                registrationPurpose || 'account_operator',
+                accountManagementDescription || '',
+                now,
+                now,
+                now
+            ]
+        );
+
+        const newUserId = insertResult.lastID;
+
+        // Policy acknowledgement
+        await run(
+            `INSERT INTO policy_acknowledgements (user_id, user_type, policy_version, accepted_at, ip_address)
+             VALUES (?, 'user', '1.0', ?, ?)`,
+            [newUserId, now, req.ip || '']
+        );
+
+        // Notify Administrator
+        await run(
+            `INSERT INTO notifications (recipient_role, category, title, message, data)
+             VALUES ('admin', 'new_registration', 'New User Registration', ?, ?)`,
+            [
+                `User ${userName} (${cleanEmail}) has registered via direct portal and is pending approval.`,
+                JSON.stringify({ userId: newUserId, email: cleanEmail, name: userName })
+            ]
+        );
+
+        // Audit log
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, result, ip_address)
+             VALUES (?, ?, 'user', ?, 'Direct User Registration Form Submitted', 'pending_approval', ?)`,
+            [newUserId, cleanEmail, newUserId, req.ip || '']
+        );
+
+        const token = jwt.sign(
+            { id: newUserId, email: cleanEmail, role: 'user', status: 'pending' },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        return res.status(201).json({
+            success: true,
+            token,
+            status: 'pending',
+            user: {
+                id: newUserId,
+                email: cleanEmail,
+                name: userName,
+                picture: avatarUrl,
+                role: 'user',
+                status: 'pending',
+                submitted_at: now
+            }
+        });
+
+    } catch (error) {
+        console.error('Direct Registration Error:', error);
+        return res.status(500).json({ error: error.message || 'Error processing registration' });
+    }
+};
+
 module.exports = {
+    login,
+    register,
     googleAuth,
     submitRegistration,
     getMe,

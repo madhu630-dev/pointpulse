@@ -814,3 +814,81 @@ body { background-color: var(--bg-color); color: var(--text-primary); transition
     .top-navbar { padding: 0 1rem; }
     .main-view-container { padding: 1rem; }
 }
+
+/* Direct Email/Password Auth & Tabs */
+.auth-tabs {
+    display: flex;
+    background: rgba(15, 23, 42, 0.7);
+    padding: 4px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 1.5rem;
+    gap: 4px;
+}
+.auth-tab-btn {
+    flex: 1;
+    padding: 0.65rem 1rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+.auth-tab-btn:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.04);
+}
+.auth-tab-btn.active {
+    background: var(--primary-color);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+}
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 1.25rem 0;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.auth-divider:not(:empty)::before {
+    margin-right: .75em;
+}
+.auth-divider:not(:empty)::after {
+    margin-left: .75em;
+}
+.auth-field-group {
+    text-align: left;
+    margin-bottom: 1rem;
+}
+.auth-field-group label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #cbd5e1;
+    margin-bottom: 0.4rem;
+}
+.auth-submit-btn {
+    width: 100%;
+    padding: 0.85rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border-radius: 10px;
+    margin-top: 0.5rem;
+}

@@ -29,11 +29,91 @@
             
             <p class="auth-tagline">
                 Enterprise Multi-User Rewards & Performance Platform.<br>
-                Sign in with your verified Google account.
+                Sign in with your Google account or credentials.
             </p>
 
             <div id="auth-error-banner" class="hidden auth-error-box">
                 <i class="fa-solid fa-circle-exclamation"></i> <span id="auth-error-text">Authentication Error</span>
+            </div>
+
+            <!-- Auth Mode Switcher Tabs -->
+            <div class="auth-tabs">
+                <button type="button" id="tab-auth-signin" class="auth-tab-btn active" onclick="switchAuthTab('signin')">
+                    <i class="fa-solid fa-right-to-bracket"></i> Sign In
+                </button>
+                <button type="button" id="tab-auth-register" class="auth-tab-btn" onclick="switchAuthTab('register')">
+                    <i class="fa-solid fa-user-plus"></i> Create Account
+                </button>
+            </div>
+
+            <!-- Form 1: Direct Email & Password Sign In (Admin & Users) -->
+            <form id="auth-login-form" onsubmit="handleEmailPasswordLogin(event)">
+                <div class="auth-field-group">
+                    <label for="login-email"><i class="fa-solid fa-envelope"></i> Google / Gmail Address *</label>
+                    <input type="email" id="login-email" class="form-input" required placeholder="001.workme@gmail.com or your@gmail.com" autocomplete="username">
+                </div>
+                <div class="auth-field-group">
+                    <label for="login-password"><i class="fa-solid fa-lock"></i> Password *</label>
+                    <input type="password" id="login-password" class="form-input" required placeholder="Enter your password" autocomplete="current-password">
+                </div>
+                <button type="submit" id="btn-login-submit" class="btn primary-btn auth-submit-btn">
+                    <i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In to PointPulse
+                </button>
+            </form>
+
+            <!-- Form 2: Direct User Registration Form (Operator Applications) -->
+            <form id="auth-register-form" class="hidden" onsubmit="handleDirectUserRegister(event)" style="text-align: left;">
+                <div class="auth-field-group">
+                    <label for="reg-direct-name"><i class="fa-solid fa-user"></i> Full Name *</label>
+                    <input type="text" id="reg-direct-name" class="form-input" required placeholder="Alex Johnson">
+                </div>
+                <div class="auth-field-group">
+                    <label for="reg-direct-email"><i class="fa-solid fa-envelope"></i> Genuine Google / Gmail Address *</label>
+                    <input type="email" id="reg-direct-email" class="form-input" required placeholder="your.name@gmail.com">
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div class="auth-field-group">
+                        <label for="reg-direct-password"><i class="fa-solid fa-lock"></i> Password *</label>
+                        <input type="password" id="reg-direct-password" class="form-input" required minlength="6" placeholder="Min 6 chars">
+                    </div>
+                    <div class="auth-field-group">
+                        <label for="reg-direct-confirm"><i class="fa-solid fa-shield"></i> Confirm *</label>
+                        <input type="password" id="reg-direct-confirm" class="form-input" required minlength="6" placeholder="Re-enter password">
+                    </div>
+                </div>
+                <div class="auth-field-group">
+                    <label for="reg-direct-phone"><i class="fa-solid fa-phone"></i> Contact Phone (Optional)</label>
+                    <input type="text" id="reg-direct-phone" class="form-input" placeholder="+1 555-0199 or +91 9876543210">
+                </div>
+                <div class="auth-field-group">
+                    <label for="reg-direct-purpose"><i class="fa-solid fa-briefcase"></i> Registration Purpose *</label>
+                    <select id="reg-direct-purpose" class="form-input" required>
+                        <option value="account_operator">Account & Rewards Operator</option>
+                        <option value="data_entry">Points Management & Data Entry</option>
+                        <option value="redemption_team">Redemption & Voucher Operations</option>
+                        <option value="auditor">Auditor / Viewer</option>
+                        <option value="other">Other Business Purpose</option>
+                    </select>
+                </div>
+                <div class="auth-field-group">
+                    <label for="reg-direct-description"><i class="fa-solid fa-file-lines"></i> Account Management Description *</label>
+                    <textarea id="reg-direct-description" rows="2" class="form-input" required placeholder="Describe the profile batch or duties you will manage..."></textarea>
+                </div>
+                <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 0.75rem; margin-bottom: 1rem;">
+                    <label style="display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; font-size: 0.78rem; line-height: 1.45; color: var(--text-primary);">
+                        <input type="checkbox" id="reg-direct-terms" required style="margin-top: 2px; width: 16px; height: 16px; accent-color: var(--primary-color);">
+                        <span>
+                            <strong>Mandatory User Acknowledgement:</strong> I confirm accurate data reporting, authorized account operation only, and agree to PointPulse's security & privacy terms.
+                        </span>
+                    </label>
+                </div>
+                <button type="submit" id="btn-register-submit" class="btn primary-btn auth-submit-btn">
+                    <i class="fa-solid fa-paper-plane"></i> Submit Registration Application
+                </button>
+            </form>
+
+            <div class="auth-divider">
+                <span>OR ONE-CLICK GOOGLE SIGN-IN</span>
             </div>
 
             <!-- Official Google Sign-In Area -->
@@ -43,7 +123,7 @@
                     <div id="g-render-target" style="display: flex; justify-content: center; width: 100%; min-height: 44px;"></div>
 
                     <!-- High-fidelity Google Sign-In Button (Instant OAuth Popup via TokenClient) -->
-                    <button id="custom-google-btn" class="google-signin-btn" onclick="initiateGoogleLogin()" style="width: 100%; max-width: 360px;">
+                    <button id="custom-google-btn" class="google-signin-btn" onclick="initiateGoogleLogin()" style="width: 100%;">
                         <svg class="google-svg-icon" viewBox="0 0 24 24" width="22" height="22">
                             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -64,18 +144,18 @@
                 <div class="security-divider"></div>
                 <div class="security-item">
                     <i class="fa-solid fa-lock" style="color: var(--success-color);"></i>
-                    <span>OAuth 2.0 Verified</span>
+                    <span>Bcrypt Password Security</span>
                 </div>
                 <div class="security-divider"></div>
                 <div class="security-item">
                     <i class="fa-solid fa-key" style="color: var(--secondary-color);"></i>
-                    <span>Zero Password Storage</span>
+                    <span>Role-Based Isolation</span>
                 </div>
             </div>
 
             <p class="auth-footer-note">
-                <i class="fa-solid fa-circle-check text-success"></i> Genuine Google Cloud Identity token validation active.<br>
-                Registration requires administrator authorization prior to dashboard access.
+                <i class="fa-solid fa-circle-check text-success"></i> Genuine Google Cloud Identity validation active.<br>
+                User accounts require administrator approval prior to dashboard access.
             </p>
             <div style="margin-top: 1rem; text-align: center;">
                 <a href="#" onclick="openModal('modal-auth-setup'); return false;" style="color: var(--text-secondary); font-size: 0.78rem; text-decoration: underline;">
@@ -1206,6 +1286,14 @@
                 <button class="icon-btn" onclick="closeModal('modal-upload-excel')"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-body">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; background: rgba(99, 102, 241, 0.08); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(99, 102, 241, 0.2);">
+                    <div style="font-size: 0.82rem; color: #cbd5e1;">
+                        <i class="fa-solid fa-circle-info text-primary"></i> Supported format: <strong>.xlsx</strong> or <strong>.csv</strong> with profile_no, email, server columns.
+                    </div>
+                    <button type="button" class="btn secondary-btn" onclick="downloadExcelTemplate()" style="font-size: 0.78rem; padding: 0.35rem 0.65rem; white-space: nowrap;">
+                        <i class="fa-solid fa-download"></i> Sample CSV
+                    </button>
+                </div>
                 <div class="form-group">
                     <label>Select Spreadsheet File (.xlsx, .csv)</label>
                     <input type="file" id="excel-file-input" accept=".xlsx, .csv" class="form-input">

@@ -126,6 +126,11 @@ async function initSchema() {
         )
     `);
 
+    // Ensure password_hash column exists for direct email/password authentication
+    try {
+        await run(`ALTER TABLE app_users ADD COLUMN password_hash TEXT`);
+    } catch (e) {}
+
     await run(`
         CREATE TABLE IF NOT EXISTS rewards_catalog (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
