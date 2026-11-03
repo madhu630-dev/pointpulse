@@ -91,36 +91,36 @@ function drawConnectorRight(doc, x, y, length = 18, label = '') {
     }
 }
 
-function drawDiagramTable(doc, x, y, w, headers, rows, colWidths) {
+function drawDiagramTable(doc, x, y, w, headers, rows, colWidths, defaultRowHeight = 16) {
     let curY = y;
-    const headerHeight = 20;
+    const headerHeight = 18;
     
     // Header row background
     doc.roundedRect(x, curY, w, headerHeight, 4).fill('#1e293b');
     
     let curX = x + 8;
     headers.forEach((h, i) => {
-        doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold')
-           .text(h, curX, curY + 6, { width: colWidths[i] });
+        doc.fillColor('#ffffff').fontSize(7.5).font('Helvetica-Bold')
+           .text(h, curX, curY + 5, { width: colWidths[i] });
         curX += colWidths[i];
     });
 
-    curY += headerHeight + 3;
+    curY += headerHeight + 2;
 
     // Data rows
     rows.forEach((row, rIdx) => {
-        const rowHeight = row.height || 18;
+        const rH = row.height || defaultRowHeight;
         const rowBg = rIdx % 2 === 0 ? '#f8fafc' : '#ffffff';
-        doc.roundedRect(x, curY, w, rowHeight, 2).fill(rowBg).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+        doc.roundedRect(x, curY, w, rH, 2).fill(rowBg).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
 
         let cellX = x + 8;
         row.cols.forEach((c, i) => {
-            doc.fillColor(row.bold && i === 0 ? '#0f172a' : '#334155').fontSize(7.5).font(row.bold && i === 0 ? 'Helvetica-Bold' : 'Helvetica')
-               .text(c, cellX, curY + 4, { width: colWidths[i] });
+            doc.fillColor(row.bold && i === 0 ? '#0f172a' : '#334155').fontSize(7).font(row.bold && i === 0 ? 'Helvetica-Bold' : 'Helvetica')
+               .text(c, cellX, curY + 3.5, { width: colWidths[i] });
             cellX += colWidths[i];
         });
 
-        curY += rowHeight + 2;
+        curY += rH + 1.5;
     });
 
     return curY;
@@ -216,67 +216,69 @@ async function buildOperatorManual() {
     doc.fillColor('#4338ca').fontSize(7.5).font('Helvetica-Bold')
        .text('Note: Operators can import all accounts at the start during their active Free Editing Window or with import permission.', 48, 150, { width: 495 });
 
-    // Master 9-Column Specification Table
+    // Master 12-Column Specification Table
     doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold')
-       .text('MASTER SPREADSHEET SCHEMA: 9 COMPREHENSIVE FIELDS', 36, 190);
+       .text('MASTER SPREADSHEET SCHEMA: COMPREHENSIVE CREDENTIALS & FIELDS', 36, 184);
 
     const schemaHeaders = ['Column Header', 'Req?', 'Example Value', 'Maps to UI Field in Account Details'];
-    const schemaWidths = [115, 40, 165, 185];
+    const schemaWidths = [120, 35, 160, 190];
     const schemaRows = [
-        { cols: ['profile_no', 'Yes', '101 (or P1)', 'Section A: Profile Number (e.g. Profile #101)'], bold: true },
-        { cols: ['email', 'Yes', 'operator.acc1@gmail.com', 'Section A & B: Primary Email / Identifier'], bold: true },
-        { cols: ['server', 'Yes', 'US-AZ#146', 'Section B: Server Information (Proxy Tag)'], bold: true },
-        { cols: ['recovery_email', 'No', 'recovery.backup@gmail.com', 'Section B: Recovery / Alt Email'], bold: false },
-        { cols: ['proton_email', 'No', 'secure.acc@proton.me', 'Section B: Proton Mail Field'], bold: false },
+        { cols: ['profile_no', 'Yes', '001 (or 089, 230)', 'Section A: Profile Number (3-digit formatted 001)'], bold: true },
+        { cols: ['email', 'Yes', 'operator.acc1@gmail.com', 'Section A & B: Primary Email / Outlook Identifier'], bold: true },
+        { cols: ['email_password', 'No', 'AlphaPass!9', 'Section B: Email / Outlook Password (Plaintext)'], bold: false },
+        { cols: ['server', 'Yes', 'US-AZ#146', 'Section A & B: Server Information (Proxy Tag)'], bold: true },
+        { cols: ['proton_email', 'No', 'secure.acc@proton.me', 'Section B: Proton Mail Address'], bold: false },
+        { cols: ['proton_password', 'No', 'ProtSecret#4', 'Section B: Proton Mail Password (Plaintext)'], bold: false },
+        { cols: ['alternative_email', 'No', 'recovery@domain.com', 'Section B: Alternative / Recovery Mail'], bold: false },
+        { cols: ['alternative_password', 'No', 'RecPass*2', 'Section B: Alternative Mail Password (Plaintext)'], bold: false },
         { cols: ['current_points', 'No', '5000', 'Account Table: Current Points Ledger'], bold: false },
-        { cols: ['classification', 'No', 'OLD (or NEW)', 'Section A: Classification Badge (Old / New)'], bold: false },
+        { cols: ['classification', 'No', 'old (or new)', 'Section A: Classification Badge (Old / New)'], bold: false },
         { cols: ['status', 'No', 'active (or banned)', 'Section A: Status Badge (Active / Banned)'], bold: false },
         { cols: ['notes', 'No', 'US proxy rotation slot #1', 'Section A: Account Notes Box'], bold: false }
     ];
 
-    const tableEndY = drawDiagramTable(doc, 36, 208, 523, schemaHeaders, schemaRows, schemaWidths);
+    const tableEndY = drawDiagramTable(doc, 36, 200, 523, schemaHeaders, schemaRows, schemaWidths, 15, 16);
 
     // Section A vs Section B Visual Mockup Box
-    drawCard(doc, 36, tableEndY + 12, 523, 210, 'UI FIELD CORRESPONDENCE: DEDICATED ACCOUNT DOSSIER', '#cbd5e1', '#ffffff');
+    drawCard(doc, 36, tableEndY + 8, 523, 140, 'UI FIELD CORRESPONDENCE: DEDICATED ACCOUNT DOSSIER', '#cbd5e1', '#ffffff');
 
     // Section A Sub-card
-    doc.roundedRect(48, tableEndY + 36, 240, 140, 4).fill('#f8fafc').strokeColor('#cbd5e1').lineWidth(0.75).stroke();
-    doc.fillColor('#4f46e5').fontSize(9).font('Helvetica-Bold').text('Section A: Account Overview', 58, tableEndY + 44);
+    doc.roundedRect(48, tableEndY + 28, 240, 95, 4).fill('#f8fafc').strokeColor('#cbd5e1').lineWidth(0.75).stroke();
+    doc.fillColor('#4f46e5').fontSize(8.5).font('Helvetica-Bold').text('Section A: Account Overview', 58, tableEndY + 34);
     
     const secAItems = [
-        ['Profile Number:', 'Populated from profile_no column'],
-        ['Account Identifier:', 'Populated from email column'],
-        ['Account Status:', 'Populated from status (ACTIVE / BANNED)'],
-        ['Classification:', 'Populated from classification (OLD / NEW)'],
-        ['Account Notes:', 'Populated from notes column']
+        ['Profile Number:', '3-digit zero-padded (001, 002, 089)'],
+        ['Email / Outlook:', 'Primary account identifier'],
+        ['Server:', 'Bound proxy host / tag'],
+        ['Status & Class:', 'ACTIVE/BANNED and OLD/NEW badges'],
+        ['Account Notes:', 'Freeform operational notes']
     ];
-    let aY = tableEndY + 60;
+    let aY = tableEndY + 48;
     secAItems.forEach(([lbl, desc]) => {
-        doc.fillColor('#0f172a').fontSize(7.5).font('Helvetica-Bold').text(lbl, 58, aY, { width: 90 });
-        doc.fillColor('#64748b').fontSize(7.5).font('Helvetica').text(desc, 150, aY, { width: 130 });
-        aY += 15;
+        doc.fillColor('#0f172a').fontSize(7).font('Helvetica-Bold').text(lbl, 58, aY, { width: 85 });
+        doc.fillColor('#64748b').fontSize(7).font('Helvetica').text(desc, 145, aY, { width: 135 });
+        aY += 12;
     });
 
     // Section B Sub-card
-    doc.roundedRect(300, tableEndY + 36, 245, 140, 4).fill('#f8fafc').strokeColor('#cbd5e1').lineWidth(0.75).stroke();
-    doc.fillColor('#10b981').fontSize(9).font('Helvetica-Bold').text('Section B: Account Credentials & Info', 310, tableEndY + 44);
+    doc.roundedRect(300, tableEndY + 28, 245, 95, 4).fill('#f8fafc').strokeColor('#cbd5e1').lineWidth(0.75).stroke();
+    doc.fillColor('#10b981').fontSize(8.5).font('Helvetica-Bold').text('Section B: Credentials & Passwords (Plaintext)', 310, tableEndY + 34);
 
     const secBItems = [
-        ['Primary Email:', 'Populated from email column'],
-        ['Recovery / Alt Email:', 'Populated from recovery_email column'],
-        ['Proton Mail:', 'Populated from proton_email column'],
-        ['Server Information:', 'Populated from server column'],
-        ['Security Standard:', 'Passwords strictly omitted (Zero-Trust)']
+        ['Email & Password:', 'Plaintext password with copy & eye toggle'],
+        ['Proton & Password:', 'Proton mail & plaintext password'],
+        ['Alt Mail & Pass:', 'Optional recovery mail & password'],
+        ['Server / Proxy:', 'Server tag with 1-click copy']
     ];
-    let bY = tableEndY + 60;
+    let bY = tableEndY + 48;
     secBItems.forEach(([lbl, desc]) => {
-        doc.fillColor('#0f172a').fontSize(7.5).font('Helvetica-Bold').text(lbl, 310, bY, { width: 95 });
-        doc.fillColor('#64748b').fontSize(7.5).font('Helvetica').text(desc, 408, bY, { width: 130 });
-        bY += 15;
+        doc.fillColor('#0f172a').fontSize(7).font('Helvetica-Bold').text(lbl, 310, bY, { width: 95 });
+        doc.fillColor('#64748b').fontSize(7).font('Helvetica').text(desc, 408, bY, { width: 130 });
+        bY += 12;
     });
 
-    doc.fillColor('#0f172a').fontSize(8).font('Helvetica-Bold')
-       .text('Result: Uploading all account data via spreadsheet ensures no field is left blank ("-") in your Account Details view.', 48, tableEndY + 184, { width: 495 });
+    doc.fillColor('#0f172a').fontSize(7.5).font('Helvetica-Bold')
+       .text('Result: Uploading all credentials via spreadsheet populates both Section A and Section B completely with no empty "-" fields.', 48, tableEndY + 126, { width: 495 });
 
     drawPageFooter(doc);
 

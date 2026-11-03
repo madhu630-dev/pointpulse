@@ -540,13 +540,19 @@ async function runTests() {
         assert.strictEqual(res.body.canEditAccounts, true);
     });
 
-    await test('User adds an account during active free editing period', async () => {
+    await test('User adds an account with comprehensive plaintext credentials during active free editing period', async () => {
         const res = await api('/api/accounts', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${testUserToken}` },
             body: {
+                profile_no: 7,
                 email: `user_device_${Date.now()}@domain.com`,
+                email_password: 'TestEmailPass123!',
                 server: 'US-TX#999',
+                proton_email: 'test_proton@proton.me',
+                proton_password: 'TestProtonPass456!',
+                alternative_email: 'test_alt@gmail.com',
+                alternative_password: 'TestAltPass789!',
                 classification: 'new',
                 status: 'active',
                 notes: 'Automated test account'
@@ -557,7 +563,7 @@ async function runTests() {
         createdAccId = res.body.account.id;
     });
 
-    await test('Dedicated Account Details page contains Overview, Credentials, Activity (NO passwords, NO points)', async () => {
+    await test('Dedicated Account Details page contains Overview, Credentials, and Passwords (Plaintext Direct Access)', async () => {
         const res = await api(`/api/accounts/${createdAccId}/details`, {
             headers: { 'Authorization': `Bearer ${testUserToken}` }
         });
@@ -567,13 +573,17 @@ async function runTests() {
         // Section A: Account Overview
         assert(data.account, 'Must have account overview');
         assert(data.account.email, 'Must have email');
+        assert.strictEqual(data.account.server, 'US-TX#999');
         assert.strictEqual(data.account.status, 'active');
         assert.strictEqual(data.account.classification, 'new');
 
-        // Section B: Account Credentials & Info (STRICT SECURITY CHECK)
-        assert.strictEqual(data.account.password, undefined, 'CRITICAL: Account password must NOT be in details');
-        assert.strictEqual(data.account.hashed_password, undefined, 'CRITICAL: Hashed password must NOT be in details');
-        assert.strictEqual(data.account.passwords, undefined, 'CRITICAL: Passwords field must NOT exist');
+        // Section B: Account Credentials & Passwords
+        assert.strictEqual(data.account.email_password, 'TestEmailPass123!');
+        assert.strictEqual(data.account.proton_email, 'test_proton@proton.me');
+        assert.strictEqual(data.account.proton_password, 'TestProtonPass456!');
+        assert.strictEqual(data.account.alternative_email, 'test_alt@gmail.com');
+        assert.strictEqual(data.account.alternative_password, 'TestAltPass789!');
+        assert.strictEqual(data.account.credentials.email_password, 'TestEmailPass123!');
 
         // Section C: Account Activity (NO points, NO redemptions)
         assert.strictEqual(data.points, undefined, 'CRITICAL: Points must NOT be displayed in Account Details');

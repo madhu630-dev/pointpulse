@@ -3,7 +3,7 @@ const xlsx = require('xlsx');
 const { Parser } = require('json2csv');
 const PDFDocument = require('pdfkit-table');
 const supabase = require('../db/supabase');
-const { run, get, all, getUserEditingPeriodStatus } = require('../db/database');
+const { run, get, all, getUserEditingPeriodStatus, decodeCredentialsFromNotes, encodeCredentialsToNotes } = require('../db/database');
 
 let io;
 const setIo = (socketIoInstance) => {
@@ -173,7 +173,7 @@ const getAccountDetails = async (req, res) => {
     try {
         const { data: account, error: accErr } = await supabase
             .from('Users')
-            .select('id, profile_no, email, server, proton_email, status, notes, alternative_email')
+            .select('id, profile_no, email, server, proton_email, status, notes, alternative_email, password')
             .eq('id', accountId)
             .single();
 
@@ -192,6 +192,14 @@ const getAccountDetails = async (req, res) => {
         if (user.role !== 'admin' && ownerId !== user.id) {
             return res.status(403).json({ error: 'Access denied. You do not have permission to view this account.' });
         }
+
+        // Fetch credentials from SQLite account_credentials or fallback to decoded notes
+        const credRow = await get(`SELECT email_password, proton_password, alternative_password FROM account_credentials WHERE account_id = ?`, [accountId]);
+        const credsFromNotes = decodeCredentialsFromNotes(account.notes);
+        const emailPassword = (credRow && credRow.email_password) ? credRow.email_password : (account.password || '');
+        const protonPassword = (credRow && credRow.proton_password) ? credRow.proton_password : (credsFromNotes.proton_password || '');
+        const alternativePassword = (credRow && credRow.alternative_password) ? credRow.alternative_password : (credsFromNotes.alternative_password || '');
+        const cleanNotes = credsFromNotes.notes || '';
 
         // Fetch activity logs (administrative modifications only - NO points, NO redemptions)
         const activityLogs = await all(
@@ -218,13 +226,16 @@ const getAccountDetails = async (req, res) => {
                 id: account.id,
                 profile_no: account.profile_no,
                 email: account.email,
+                email_password: emailPassword,
                 status: account.status || 'active',
                 classification: meta ? meta.classification : 'new',
                 server: account.server || '',
                 recovery_email: account.alternative_email || '',
                 alternative_email: account.alternative_email || '',
+                alternative_password: alternativePassword,
                 proton_email: account.proton_email || '',
-                notes: account.notes || '',
+                proton_password: protonPassword,
+                notes: cleanNotes,
                 user_id: ownerId,
                 owner,
                 createdAt: meta ? meta.updated_at : null,
@@ -234,20 +245,24 @@ const getAccountDetails = async (req, res) => {
                     id: account.id,
                     profile_no: account.profile_no,
                     email: account.email,
+                    server: account.server || '',
                     status: account.status || 'active',
                     classification: meta ? meta.classification : 'new',
                     registered_at: meta ? meta.updated_at : null,
                     last_updated: meta ? meta.updated_at : null,
-                    notes: account.notes || '',
+                    notes: cleanNotes,
                     owner_id: ownerId
                 },
                 credentials: {
                     email: account.email,
+                    email_password: emailPassword,
+                    server: account.server || '',
                     alternative_email: account.alternative_email || '',
+                    alternative_password: alternativePassword,
                     recovery_email: account.alternative_email || '',
                     proton_email: account.proton_email || '',
-                    server: account.server || '',
-                    notes: account.notes || ''
+                    proton_password: protonPassword,
+                    notes: cleanNotes
                 }
             },
             activityLogs,
@@ -273,7 +288,11 @@ const getAccountDetails = async (req, res) => {
 // Create Account (Admin or user within free editing period / with add_accounts permission)
 const createAccount = async (req, res) => {
     const user = req.user;
-    const { profile_no, profileNo, email, server, proton_email, status, notes, alternative_email, initial_points, currentPoints, classification } = req.body;
+    const {
+        profile_no, profileNo, email, email_password, password, outlook_password,
+        server, proton_email, proton_password, status, notes,
+        alternative_email, alternative_password, initial_points, currentPoints, classification
+    } = req.body;
 
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
@@ -308,17 +327,23 @@ const createAccount = async (req, res) => {
         }
 
         const now = new Date().toISOString();
+        const finalEmailPassword = email_password || password || outlook_password || '';
+        const finalProtonPassword = proton_password || '';
+        const finalAltPassword = alternative_password || '';
+        const finalNotes = notes || '';
+        const encodedNotes = encodeCredentialsToNotes(finalNotes, finalProtonPassword, finalAltPassword);
         
         // Insert with columns supported by Supabase Users table
         const insertPayload = {
             admin_id: 1,
-            email,
-            server: server || '',
-            proton_email: proton_email || '',
+            email: email.trim(),
+            server: server ? server.trim() : '',
+            proton_email: proton_email ? proton_email.trim() : '',
             profile_no: finalProfileNo,
             status: status || 'active',
-            notes: notes || '',
-            alternative_email: alternative_email || ''
+            notes: encodedNotes,
+            alternative_email: alternative_email ? alternative_email.trim() : '',
+            password: finalEmailPassword
         };
 
         const { data: newAcc, error: insertError } = await supabase
@@ -328,6 +353,18 @@ const createAccount = async (req, res) => {
             .single();
 
         if (insertError) throw insertError;
+
+        // Store credentials in dedicated SQLite account_credentials table
+        await run(
+            `INSERT INTO account_credentials (account_id, email_password, proton_password, alternative_password, updated_at)
+             VALUES (?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(account_id) DO UPDATE SET
+                email_password = excluded.email_password,
+                proton_password = excluded.proton_password,
+                alternative_password = excluded.alternative_password,
+                updated_at = datetime('now')`,
+            [newAcc.id, finalEmailPassword, finalProtonPassword, finalAltPassword]
+        );
 
         // Store metadata (user_id and classification)
         const finalClass = classification || 'new';
@@ -386,7 +423,11 @@ const createAccount = async (req, res) => {
 const updateAccount = async (req, res) => {
     const accountId = req.params.id;
     const user = req.user;
-    const { profile_no, profileNo, email, server, status, notes, is_pinned, proton_email, alternative_email, classification } = req.body;
+    const {
+        profile_no, profileNo, email, email_password, password, outlook_password,
+        server, status, notes, is_pinned, proton_email, proton_password,
+        alternative_email, alternative_password, classification
+    } = req.body;
     const profNum = profile_no !== undefined ? profile_no : profileNo;
 
     try {
@@ -420,18 +461,44 @@ const updateAccount = async (req, res) => {
         }
 
         const updates = {};
-        if (profNum !== undefined) updates.profile_no = profNum;
-        if (email) updates.email = email;
-        if (server !== undefined) updates.server = server;
+        if (profNum !== undefined) updates.profile_no = parseInt(profNum);
+        if (email && email.trim()) updates.email = email.trim();
+        if (server !== undefined) updates.server = server ? server.trim() : '';
         if (status) updates.status = status;
-        if (notes !== undefined) updates.notes = notes;
         if (is_pinned !== undefined) updates.is_pinned = is_pinned;
-        if (proton_email !== undefined) updates.proton_email = proton_email;
-        if (alternative_email !== undefined) updates.alternative_email = alternative_email;
+        if (proton_email !== undefined) updates.proton_email = proton_email ? proton_email.trim() : '';
+        if (alternative_email !== undefined) updates.alternative_email = alternative_email ? alternative_email.trim() : '';
+
+        // Handle credentials
+        const existingCreds = decodeCredentialsFromNotes(existing.notes);
+        const existingSqlCreds = await get(`SELECT email_password, proton_password, alternative_password FROM account_credentials WHERE account_id = ?`, [accountId]);
+
+        const newEmailPassword = (email_password !== undefined) ? email_password : (password !== undefined ? password : (outlook_password !== undefined ? outlook_password : (existingSqlCreds?.email_password || existing.password || '')));
+        const newProtonPassword = (proton_password !== undefined) ? proton_password : (existingSqlCreds?.proton_password || existingCreds.proton_password || '');
+        const newAltPassword = (alternative_password !== undefined) ? alternative_password : (existingSqlCreds?.alternative_password || existingCreds.alternative_password || '');
+
+        if (email_password !== undefined || password !== undefined || outlook_password !== undefined) {
+            updates.password = newEmailPassword;
+        }
+
+        const baseNotes = (notes !== undefined) ? notes : existingCreds.notes;
+        updates.notes = encodeCredentialsToNotes(baseNotes, newProtonPassword, newAltPassword);
 
         if (Object.keys(updates).length > 0) {
             await supabase.from('Users').update(updates).eq('id', accountId);
         }
+
+        // Upsert SQLite account_credentials
+        await run(
+            `INSERT INTO account_credentials (account_id, email_password, proton_password, alternative_password, updated_at)
+             VALUES (?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(account_id) DO UPDATE SET
+                email_password = excluded.email_password,
+                proton_password = excluded.proton_password,
+                alternative_password = excluded.alternative_password,
+                updated_at = datetime('now')`,
+            [accountId, newEmailPassword, newProtonPassword, newAltPassword]
+        );
 
         // Only admin can reclassify directly
         if (classification && user.role === 'admin') {
@@ -690,15 +757,30 @@ const uploadExcel = async (req, res) => {
         const keys = Object.keys(data[0]);
         const emailCol = keys.find(k => {
             const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-            return (lk.includes('email') || lk.includes('identifier') || lk.includes('account')) && !lk.includes('proton') && !lk.includes('alt') && !lk.includes('recovery');
+            return (lk.includes('email') || lk.includes('identifier') || lk.includes('account') || lk.includes('outlook')) && !lk.includes('proton') && !lk.includes('alt') && !lk.includes('recovery') && !lk.includes('pass') && !lk.includes('pwd');
         });
-        const protonCol = keys.find(k => k.toLowerCase().includes('proton'));
+        const emailPasswordCol = keys.find(k => {
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return (lk === 'password' || lk === 'emailpassword' || lk === 'outlookpassword' || lk === 'pass' || lk === 'pwd') && !lk.includes('proton') && !lk.includes('alt') && !lk.includes('recovery');
+        });
+        const protonCol = keys.find(k => {
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return lk.includes('proton') && !lk.includes('pass') && !lk.includes('pwd');
+        });
+        const protonPasswordCol = keys.find(k => {
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return lk.includes('proton') && (lk.includes('pass') || lk.includes('pwd'));
+        });
         const serverCol = keys.find(k => k.toLowerCase().includes('server') || k.toLowerCase().includes('proxy'));
         const profileCol = keys.find(k => k.toLowerCase().includes('profile') || k.toLowerCase() === 'prof' || k.toLowerCase() === 'prof#');
         const statusCol = keys.find(k => k.toLowerCase().includes('status') || k.toLowerCase().includes('ban'));
         const altEmailCol = keys.find(k => {
-            const lk = k.toLowerCase();
-            return lk.includes('recovery') || lk.includes('alt') || lk.includes('backup') || lk.includes('secondary');
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return (lk.includes('recovery') || lk.includes('alt') || lk.includes('backup') || lk.includes('secondary')) && !lk.includes('pass') && !lk.includes('pwd');
+        });
+        const altPasswordCol = keys.find(k => {
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return (lk.includes('recovery') || lk.includes('alt') || lk.includes('backup') || lk.includes('secondary')) && (lk.includes('pass') || lk.includes('pwd'));
         });
         const classCol = keys.find(k => k.toLowerCase().includes('class'));
         const notesCol = keys.find(k => k.toLowerCase().includes('note') || k.toLowerCase().includes('comment') || k.toLowerCase().includes('desc'));
@@ -731,13 +813,18 @@ const uploadExcel = async (req, res) => {
         let syncedCount = 0;
 
         for (const row of data) {
-            const email = emailCol ? row[emailCol] : null;
+            const email = emailCol ? String(row[emailCol] || '').trim() : null;
             if (!email) continue;
 
-            const server = serverCol ? (row[serverCol] || '') : '';
-            const protonEmail = protonCol ? (row[protonCol] || '') : '';
-            const altEmail = altEmailCol ? (row[altEmailCol] || '') : '';
-            const notes = notesCol ? (row[notesCol] || '') : '';
+            const server = serverCol ? String(row[serverCol] || '').trim() : '';
+            const protonEmail = protonCol ? String(row[protonCol] || '').trim() : '';
+            const altEmail = altEmailCol ? String(row[altEmailCol] || '').trim() : '';
+            const emailPassword = emailPasswordCol ? String(row[emailPasswordCol] || '').trim() : '';
+            const protonPassword = protonPasswordCol ? String(row[protonPasswordCol] || '').trim() : '';
+            const altPassword = altPasswordCol ? String(row[altPasswordCol] || '').trim() : '';
+            const rawNotes = notesCol ? String(row[notesCol] || '').trim() : '';
+            const encodedNotes = encodeCredentialsToNotes(rawNotes, protonPassword, altPassword);
+
             let profileNo = profileCol ? row[profileCol] : null;
             if (profileNo) profileNo = parseInt(profileNo.toString().replace(/\D/g, '')) || null;
 
@@ -761,9 +848,11 @@ const uploadExcel = async (req, res) => {
             if (existingAccount) {
                 accountId = existingAccount.id;
                 profileNo = profileNo || existingAccount.profile_no;
-                await supabase.from('Users').update({
-                    server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail, notes
-                }).eq('id', accountId);
+                const updatePayload = {
+                    server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail, notes: encodedNotes
+                };
+                if (emailPassword) updatePayload.password = emailPassword;
+                await supabase.from('Users').update(updatePayload).eq('id', accountId);
             } else {
                 if (!profileNo) {
                     currentMaxProfileNo++;
@@ -772,13 +861,27 @@ const uploadExcel = async (req, res) => {
                     currentMaxProfileNo = profileNo;
                 }
 
-                const { data: newAcc, error: insertError } = await supabase.from('Users').insert([{
-                    admin_id: 1, email, server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail, notes
-                }]).select('id').single();
+                const insertPayload = {
+                    admin_id: 1, email, server, proton_email: protonEmail, profile_no: profileNo, status, alternative_email: altEmail, notes: encodedNotes, password: emailPassword
+                };
+
+                const { data: newAcc, error: insertError } = await supabase.from('Users').insert([insertPayload]).select('id').single();
 
                 if (insertError) continue;
                 accountId = newAcc.id;
             }
+
+            // Save credentials to SQLite account_credentials
+            await run(
+                `INSERT INTO account_credentials (account_id, email_password, proton_password, alternative_password, updated_at)
+                 VALUES (?, ?, ?, ?, datetime('now'))
+                 ON CONFLICT(account_id) DO UPDATE SET
+                    email_password = CASE WHEN excluded.email_password != '' THEN excluded.email_password ELSE account_credentials.email_password END,
+                    proton_password = CASE WHEN excluded.proton_password != '' THEN excluded.proton_password ELSE account_credentials.proton_password END,
+                    alternative_password = CASE WHEN excluded.alternative_password != '' THEN excluded.alternative_password ELSE account_credentials.alternative_password END,
+                    updated_at = datetime('now')`,
+                [accountId, emailPassword, protonPassword, altPassword]
+            );
 
             // Assign metadata
             await run(

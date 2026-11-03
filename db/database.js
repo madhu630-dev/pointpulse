@@ -233,6 +233,17 @@ async function initSchema() {
         )
     `);
 
+    // Dedicated Account Credentials Table (Zero-Encryption Plaintext for Operator/Admin Visibility)
+    await run(`
+        CREATE TABLE IF NOT EXISTS account_credentials (
+            account_id INTEGER PRIMARY KEY,
+            email_password TEXT,
+            proton_password TEXT,
+            alternative_password TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    `);
+
     await run(`
         CREATE TABLE IF NOT EXISTS form_schedules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -486,7 +497,7 @@ async function initSchema() {
 
     // Fetch all accounts from Supabase and ensure they are populated into account_metadata for laptopmew1@gmail.com
     try {
-        const { data: accounts } = await supabase.from('Users').select('id');
+        const { data: accounts } = await supabase.from('Users').select('id, password, notes');
         if (accounts && accounts.length > 0) {
             for (const acc of accounts) {
                 await run(
@@ -495,6 +506,21 @@ async function initSchema() {
                      ON CONFLICT(account_id) DO UPDATE SET user_id = excluded.user_id, updated_at = datetime('now')`,
                     [acc.id, operatorUser.id]
                 );
+
+                const creds = decodeCredentialsFromNotes(acc.notes);
+                const emailPass = acc.password || '';
+                if (emailPass || creds.proton_password || creds.alternative_password) {
+                    await run(
+                        `INSERT INTO account_credentials (account_id, email_password, proton_password, alternative_password, updated_at)
+                         VALUES (?, ?, ?, ?, datetime('now'))
+                         ON CONFLICT(account_id) DO UPDATE SET 
+                            email_password = CASE WHEN excluded.email_password != '' THEN excluded.email_password ELSE account_credentials.email_password END,
+                            proton_password = CASE WHEN excluded.proton_password != '' THEN excluded.proton_password ELSE account_credentials.proton_password END,
+                            alternative_password = CASE WHEN excluded.alternative_password != '' THEN excluded.alternative_password ELSE account_credentials.alternative_password END,
+                            updated_at = datetime('now')`,
+                        [acc.id, emailPass, creds.proton_password, creds.alternative_password]
+                    );
+                }
             }
         }
     } catch (e) {
@@ -572,6 +598,36 @@ async function getUserEditingPeriodStatus(userId) {
     };
 }
 
+// Credentials encoding & decoding helpers for persistence across remote notes & SQLite
+function decodeCredentialsFromNotes(rawNotes) {
+    if (!rawNotes) return { notes: '', proton_password: '', alternative_password: '' };
+    const markerRegex = /<!--pointpulse_cred:(.*?)-->/s;
+    const match = rawNotes.match(markerRegex);
+    let proton_password = '';
+    let alternative_password = '';
+    if (match) {
+        try {
+            const parsed = JSON.parse(match[1]);
+            proton_password = parsed.proton_pw || '';
+            alternative_password = parsed.alt_pw || '';
+        } catch (e) {}
+    }
+    const cleanNotes = rawNotes.replace(markerRegex, '').trim();
+    return { notes: cleanNotes, proton_password, alternative_password };
+}
+
+function encodeCredentialsToNotes(cleanNotes, protonPassword, altPassword) {
+    const baseNotes = (cleanNotes || '').replace(/<!--pointpulse_cred:.*?-->/gs, '').trim();
+    if (!protonPassword && !altPassword) {
+        return baseNotes;
+    }
+    const payload = JSON.stringify({
+        proton_pw: protonPassword || '',
+        alt_pw: altPassword || ''
+    });
+    return `${baseNotes}\n<!--pointpulse_cred:${payload}-->`.trim();
+}
+
 module.exports = {
     ADMIN_EMAIL,
     sqlite,
@@ -579,5 +635,7 @@ module.exports = {
     get,
     all,
     supabase,
-    getUserEditingPeriodStatus
+    getUserEditingPeriodStatus,
+    decodeCredentialsFromNotes,
+    encodeCredentialsToNotes
 };

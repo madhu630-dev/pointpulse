@@ -534,8 +534,48 @@ async function handleDirectUserRegister(event) {
     }
 }
 
+function formatProfileNo(val) {
+    if (val === null || val === undefined || val === '') return '-';
+    const num = parseInt(val, 10);
+    if (!isNaN(num)) {
+        return String(num).padStart(3, '0');
+    }
+    return String(val);
+}
+
+function copyCredText(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const val = el.getAttribute('data-real-value') || el.textContent;
+    if (!val || val === '-' || val === 'None') {
+        showToast('Info', 'No value to copy', 'warning');
+        return;
+    }
+    navigator.clipboard.writeText(val).then(() => {
+        showToast('Copied', `Copied to clipboard: ${val}`);
+    }).catch(() => {
+        showToast('Error', 'Failed to copy to clipboard', 'danger');
+    });
+}
+
+function toggleCredVisibility(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const isMasked = el.getAttribute('data-masked') === 'true';
+    const realVal = el.getAttribute('data-real-value') || '';
+    if (!realVal || realVal === 'None' || realVal === '-') return;
+
+    if (isMasked) {
+        el.textContent = realVal;
+        el.setAttribute('data-masked', 'false');
+    } else {
+        el.textContent = '••••••••';
+        el.setAttribute('data-masked', 'true');
+    }
+}
+
 function downloadExcelTemplate() {
-    const csvContent = "profile_no,email,server,recovery_email,proton_email,current_points,classification,status,notes\n1,user.acc1@gmail.com,US-AZ#146,recovery1@gmail.com,proton1@proton.me,5000,OLD,active,Primary production profile\n2,user.acc2@gmail.com,US-DC#257,recovery2@gmail.com,proton2@proton.me,7350,NEW,active,Secondary backup profile\n";
+    const csvContent = "profile_no,email,email_password,server,proton_email,proton_password,alternative_email,alternative_password,current_points,classification,status,notes\n001,user.acc1@gmail.com,Pass123!,US-AZ#146,proton1@proton.me,ProtPass1!,recovery1@gmail.com,AltPass1!,5000,old,active,Primary production profile\n002,user.acc2@gmail.com,Pass456!,US-DC#257,proton2@proton.me,ProtPass2!,,,7350,new,active,Secondary backup profile\n003,charlieacc@outlook.com,OutPass789!,US-TX#450,charlie@proton.me,ProtPass3!,charlie_alt@yahoo.com,AltPass3!,1200,new,banned,Routine audit record\n";
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -544,8 +584,12 @@ function downloadExcelTemplate() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('Template Downloaded', 'Sample CSV template downloaded with all 9 account fields.');
+    showToast('Template Downloaded', 'Sample CSV template downloaded with 3-digit profile numbers and credentials.');
 }
+
+window.formatProfileNo = formatProfileNo;
+window.copyCredText = copyCredText;
+window.toggleCredVisibility = toggleCredVisibility;
 
 window.switchAuthTab = switchAuthTab;
 window.handleEmailPasswordLogin = handleEmailPasswordLogin;
@@ -1054,7 +1098,7 @@ function switchUserTab(tabName) {
                             ${filtered.length === 0 ? '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No accounts in this category.</td></tr>' : 
                             filtered.map(a => `
                                 <tr>
-                                    <td><strong>P${a.profile_no || '-'}</strong></td>
+                                    <td><strong>${formatProfileNo(a.profile_no)}</strong></td>
                                     <td>${escapeHtml(a.email)}</td>
                                     <td class="text-secondary">${a.server || '-'}</td>
                                     <td><span class="badge badge-primary">${(a.classification || 'new').toUpperCase()}</span></td>
@@ -1211,7 +1255,7 @@ function filterAllAccountsTable() {
 
     body.innerHTML = filtered.map(a => `
         <tr>
-            <td><strong>P${a.profile_no || '-'}</strong></td>
+            <td><strong>${formatProfileNo(a.profile_no)}</strong></td>
             <td>
                 <div style="font-weight: 600; color: #fff;">${escapeHtml(a.email)}</div>
                 ${a.recovery_email ? `<div class="text-secondary" style="font-size: 0.78rem;">Alt: ${escapeHtml(a.recovery_email)}</div>` : ''}
@@ -1324,10 +1368,10 @@ async function openAccountDetailsPage(accountId) {
         document.querySelectorAll('.page-pane').forEach(p => p.classList.add('hidden'));
         const detailsPane = document.getElementById('page-account-details');
         detailsPane.classList.remove('hidden');
-        document.getElementById('current-view-title').textContent = `Account Details: P${acc.profile_no || ''} (${acc.email})`;
+        document.getElementById('current-view-title').textContent = `Account Details: P${formatProfileNo(acc.profile_no)} (${acc.email})`;
 
         // Populate Banner
-        document.getElementById('acc-detail-profile-badge').textContent = `P${acc.profile_no || '-'}`;
+        document.getElementById('acc-detail-profile-badge').textContent = `P${formatProfileNo(acc.profile_no)}`;
         document.getElementById('acc-detail-email-title').textContent = acc.email;
         
         const statusBadge = document.getElementById('acc-detail-status-badge');
@@ -1351,10 +1395,13 @@ async function openAccountDetailsPage(accountId) {
 
         // Section A: Overview
         const elProfNo = document.getElementById('acc-detail-prof-no');
-        if (elProfNo) elProfNo.textContent = `Profile #${acc.profile_no || '-'}`;
+        if (elProfNo) elProfNo.textContent = formatProfileNo(acc.profile_no);
 
         const elEmail = document.getElementById('acc-detail-email');
         if (elEmail) elEmail.textContent = acc.email || '-';
+
+        const elServerOverview = document.getElementById('acc-detail-server-overview');
+        if (elServerOverview) elServerOverview.textContent = acc.server || 'None';
 
         const elStatus = document.getElementById('acc-detail-status');
         if (elStatus) {
@@ -1377,18 +1424,55 @@ async function openAccountDetailsPage(accountId) {
         const elNotes = document.getElementById('acc-detail-notes');
         if (elNotes) elNotes.textContent = acc.notes || 'None';
 
-        // Section B: Credentials & Information
+        // Section B: Credentials & Information (Plaintext Direct Access)
         const elCredEmail = document.getElementById('acc-detail-cred-email');
-        if (elCredEmail) elCredEmail.textContent = acc.email || '-';
+        if (elCredEmail) {
+            elCredEmail.textContent = acc.email || '-';
+            elCredEmail.setAttribute('data-real-value', acc.email || '');
+        }
 
-        const elCredAlt = document.getElementById('acc-detail-cred-alt');
-        if (elCredAlt) elCredAlt.textContent = acc.recovery_email || acc.alternative_email || 'Not Configured';
-
-        const elCredProton = document.getElementById('acc-detail-cred-proton');
-        if (elCredProton) elCredProton.textContent = acc.proton_email || 'None';
+        const elCredEmailPass = document.getElementById('acc-detail-cred-email-pass');
+        if (elCredEmailPass) {
+            const passVal = acc.email_password || 'None';
+            elCredEmailPass.textContent = passVal;
+            elCredEmailPass.setAttribute('data-real-value', passVal);
+            elCredEmailPass.setAttribute('data-masked', 'false');
+        }
 
         const elCredServer = document.getElementById('acc-detail-cred-server');
-        if (elCredServer) elCredServer.textContent = acc.server || 'None';
+        if (elCredServer) {
+            elCredServer.textContent = acc.server || 'None';
+            elCredServer.setAttribute('data-real-value', acc.server || '');
+        }
+
+        const elCredProton = document.getElementById('acc-detail-cred-proton');
+        if (elCredProton) {
+            elCredProton.textContent = acc.proton_email || 'None';
+            elCredProton.setAttribute('data-real-value', acc.proton_email || '');
+        }
+
+        const elCredProtonPass = document.getElementById('acc-detail-cred-proton-pass');
+        if (elCredProtonPass) {
+            const protPassVal = acc.proton_password || 'None';
+            elCredProtonPass.textContent = protPassVal;
+            elCredProtonPass.setAttribute('data-real-value', protPassVal);
+            elCredProtonPass.setAttribute('data-masked', 'false');
+        }
+
+        const elCredAlt = document.getElementById('acc-detail-cred-alt');
+        if (elCredAlt) {
+            const altVal = acc.alternative_email || acc.recovery_email || 'None';
+            elCredAlt.textContent = altVal;
+            elCredAlt.setAttribute('data-real-value', altVal);
+        }
+
+        const elCredAltPass = document.getElementById('acc-detail-cred-alt-pass');
+        if (elCredAltPass) {
+            const altPassVal = acc.alternative_password || 'None';
+            elCredAltPass.textContent = altPassVal;
+            elCredAltPass.setAttribute('data-real-value', altPassVal);
+            elCredAltPass.setAttribute('data-masked', 'false');
+        }
 
         // Section C: Activity Log (Administrative Only)
         const actBody = document.getElementById('acc-detail-activity-body');
@@ -1488,7 +1572,12 @@ function openCreateAccountModal() {
     document.getElementById('acc-profile-no').value = '';
     document.getElementById('acc-email').value = '';
     document.getElementById('acc-email').readOnly = false;
+    document.getElementById('acc-email-password').value = '';
     document.getElementById('acc-server').value = '';
+    document.getElementById('acc-proton-email').value = '';
+    document.getElementById('acc-proton-password').value = '';
+    document.getElementById('acc-alt-email').value = '';
+    document.getElementById('acc-alt-password').value = '';
     document.getElementById('acc-classification').value = 'new';
     document.getElementById('acc-status').value = 'active';
     document.getElementById('acc-initial-points').value = '0';
@@ -1507,11 +1596,16 @@ async function openEditAccountModal(accountId) {
         const data = await res.json();
         const acc = data.account;
 
-        document.getElementById('modal-account-title').textContent = `Edit Account: P${acc.profile_no || ''} (${acc.email})`;
+        document.getElementById('modal-account-title').textContent = `Edit Account: P${formatProfileNo(acc.profile_no)} (${acc.email})`;
         document.getElementById('acc-id').value = acc.id;
         document.getElementById('acc-profile-no').value = acc.profile_no || '';
         document.getElementById('acc-email').value = acc.email;
+        document.getElementById('acc-email-password').value = acc.email_password || '';
         document.getElementById('acc-server').value = acc.server || '';
+        document.getElementById('acc-proton-email').value = acc.proton_email || '';
+        document.getElementById('acc-proton-password').value = acc.proton_password || '';
+        document.getElementById('acc-alt-email').value = acc.alternative_email || acc.recovery_email || '';
+        document.getElementById('acc-alt-password').value = acc.alternative_password || '';
         document.getElementById('acc-classification').value = acc.classification || 'new';
         document.getElementById('acc-status').value = acc.status || 'active';
         document.getElementById('acc-initial-points').closest('.form-group').style.display = 'none';
@@ -1527,7 +1621,12 @@ async function saveAccountRecord() {
     const accId = document.getElementById('acc-id').value;
     const profileNo = document.getElementById('acc-profile-no').value;
     const email = document.getElementById('acc-email').value.trim();
+    const emailPassword = document.getElementById('acc-email-password').value;
     const server = document.getElementById('acc-server').value.trim();
+    const protonEmail = document.getElementById('acc-proton-email').value.trim();
+    const protonPassword = document.getElementById('acc-proton-password').value;
+    const altEmail = document.getElementById('acc-alt-email').value.trim();
+    const altPassword = document.getElementById('acc-alt-password').value;
     const classification = document.getElementById('acc-classification').value;
     const status = document.getElementById('acc-status').value;
     const initialPoints = parseInt(document.getElementById('acc-initial-points').value) || 0;
@@ -1541,33 +1640,34 @@ async function saveAccountRecord() {
 
     try {
         let res;
+        const payload = {
+            profileNo: profileNo ? Number(profileNo) : undefined,
+            email,
+            email_password: emailPassword,
+            server,
+            proton_email: protonEmail,
+            proton_password: protonPassword,
+            alternative_email: altEmail,
+            alternative_password: altPassword,
+            classification,
+            status,
+            notes,
+            user_id: ownerId ? Number(ownerId) : undefined
+        };
+
         if (accId) {
             res = await fetch(`/api/accounts/${accId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
-                body: JSON.stringify({
-                    profileNo: profileNo ? Number(profileNo) : undefined,
-                    server,
-                    classification,
-                    status,
-                    notes,
-                    user_id: ownerId ? Number(ownerId) : undefined
-                })
+                body: JSON.stringify(payload)
             });
         } else {
+            payload.initial_points = initialPoints;
+            payload.currentPoints = initialPoints;
             res = await fetch('/api/accounts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
-                body: JSON.stringify({
-                    email,
-                    profileNo: profileNo ? Number(profileNo) : undefined,
-                    server,
-                    classification,
-                    status,
-                    currentPoints: initialPoints,
-                    notes,
-                    user_id: ownerId ? Number(ownerId) : undefined
-                })
+                body: JSON.stringify(payload)
             });
         }
 
@@ -1579,6 +1679,17 @@ async function saveAccountRecord() {
                 loadAllAccounts();
             } else {
                 loadUserAccounts();
+            }
+            if (accId) {
+                openAccountDetailsPage(accId);
+            }
+        } else {
+            showToast('Error', data.error || 'Failed to save account', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Failed to save account', 'danger');
+    }
+}
             }
             if (!document.getElementById('page-account-details').classList.contains('hidden') && accId) {
                 openAccountDetailsPage(accId);
@@ -1775,7 +1886,7 @@ async function loadClassificationBoard() {
         const renderCards = (accList) => accList.map(a => `
             <div class="drag-card" draggable="true" ondragstart="dragStart(event, ${a.id})">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <strong>P${a.profile_no || '-'} • ${escapeHtml(a.email.split('@')[0])}</strong>
+                    <strong>${formatProfileNo(a.profile_no)} • ${escapeHtml(a.email.split('@')[0])}</strong>
                     <span style="color: var(--secondary-color); font-weight: 700; font-size: 0.82rem;">${a.current_points.toLocaleString()} pts</span>
                 </div>
                 <div class="text-secondary" style="font-size: 0.78rem; margin-top: 4px;">${escapeHtml(a.email)}</div>
@@ -2474,7 +2585,7 @@ function filterUserActiveTable() {
         activeBody.innerHTML = activeList.length === 0 ? '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No active accounts found.</td></tr>' :
             activeList.map(a => `
                 <tr>
-                    <td><strong>P${a.profile_no || '-'}</strong></td>
+                    <td><strong>${formatProfileNo(a.profile_no)}</strong></td>
                     <td>
                         <div style="font-weight: 600; color: #fff;">${escapeHtml(a.email)}</div>
                         ${a.recovery_email ? `<div class="text-secondary" style="font-size: 0.78rem;">Alt: ${escapeHtml(a.recovery_email)}</div>` : ''}
@@ -2502,7 +2613,7 @@ function filterUserActiveTable() {
         bannedBody.innerHTML = bannedList.length === 0 ? '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No banned accounts.</td></tr>' :
             bannedList.map(a => `
                 <tr>
-                    <td><strong>P${a.profile_no || '-'}</strong></td>
+                    <td><strong>${formatProfileNo(a.profile_no)}</strong></td>
                     <td>${escapeHtml(a.email)}</td>
                     <td class="text-secondary">${a.server || '-'}</td>
                     <td>${a.current_points.toLocaleString()}</td>
@@ -2535,7 +2646,7 @@ function renderUserClassifiedAccounts(tab) {
     body.innerHTML = list.length === 0 ? `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No ${tab} accounts found.</td></tr>` :
         list.map(a => `
             <tr>
-                <td><strong>P${a.profile_no || '-'}</strong></td>
+                <td><strong>${formatProfileNo(a.profile_no)}</strong></td>
                 <td>${escapeHtml(a.email)}</td>
                 <td>${a.current_points.toLocaleString()}</td>
                 <td><span class="badge badge-primary">${tab.toUpperCase()}</span></td>
