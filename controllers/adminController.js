@@ -499,6 +499,187 @@ const createTemporaryAccessWindow = async (req, res) => {
     }
 };
 
+// Quick 1-Click Toggle for individual permission
+const quickToggleUserPermission = async (req, res) => {
+    const userId = req.params.id;
+    const { permissionKey, enable } = req.body;
+
+    const validKeys = [
+        'update_points', 'edit_accounts', 'add_accounts', 'import_excel', 
+        'view_accounts', 'view_old_accounts', 'view_new_accounts', 
+        'view_redemption', 'submit_requests', 'download_reports'
+    ];
+    if (!permissionKey || !validKeys.includes(permissionKey)) {
+        return res.status(400).json({ error: 'Invalid permission key' });
+    }
+
+    try {
+        const user = await get(`SELECT * FROM app_users WHERE id = ?`, [userId]);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        if (enable) {
+            await run(
+                `INSERT OR REPLACE INTO user_permissions (user_id, permission_key, granted_at, expires_at, granted_by)
+                 VALUES (?, ?, datetime('now'), NULL, ?)`,
+                [userId, permissionKey, req.user.id]
+            );
+        } else {
+            await run(
+                `DELETE FROM user_permissions WHERE user_id = ? AND permission_key = ?`,
+                [userId, permissionKey]
+            );
+            // If disabling write permission, also deactivate active windows
+            if (['update_points', 'edit_accounts', 'add_accounts'].includes(permissionKey)) {
+                await run(
+                    `UPDATE temporary_access_windows SET is_active = 0 WHERE user_id = ? AND is_active = 1`,
+                    [userId]
+                );
+            }
+        }
+
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, result)
+             VALUES (?, ?, 'admin', ?, 'Toggled User Permission', ?, 'success')`,
+            [req.user.id, req.user.email, userId, JSON.stringify({ permissionKey, enable: Boolean(enable) })]
+        );
+
+        res.json({ success: true, permissionKey, enabled: Boolean(enable) });
+    } catch (error) {
+        console.error('Quick Toggle Error:', error);
+        res.status(500).json({ error: 'Failed to toggle permission' });
+    }
+};
+
+// Simplified Window Scheduler (e.g. 30m, 1h, 2h, 24h, custom)
+const scheduleUserWindow = async (req, res) => {
+    const userId = req.params.id;
+    const { durationMinutes, permittedActions, customEndTime } = req.body;
+
+    try {
+        const user = await get(`SELECT * FROM app_users WHERE id = ?`, [userId]);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const now = new Date();
+        let end = new Date();
+        if (customEndTime) {
+            end = new Date(customEndTime);
+        } else {
+            const mins = parseInt(durationMinutes) || 60;
+            end = new Date(now.getTime() + (mins * 60 * 1000));
+        }
+
+        const actions = Array.isArray(permittedActions) && permittedActions.length > 0 
+            ? permittedActions 
+            : ['update_points', 'edit_accounts'];
+
+        const startTimeIso = now.toISOString();
+        const endTimeIso = end.toISOString();
+
+        // 1. Record temporary access window
+        const resInsert = await run(
+            `INSERT INTO temporary_access_windows (user_id, start_time, end_time, permitted_actions, is_active, created_by)
+             VALUES (?, ?, ?, ?, 1, ?)`,
+            [userId, startTimeIso, endTimeIso, JSON.stringify(actions), req.user.id]
+        );
+
+        // 2. Grant permissions with expiration
+        for (const act of actions) {
+            await run(
+                `INSERT OR REPLACE INTO user_permissions (user_id, permission_key, granted_at, expires_at, granted_by)
+                 VALUES (?, ?, datetime('now'), ?, ?)`,
+                [userId, act, endTimeIso, req.user.id]
+            );
+        }
+
+        // 3. Configure user_editing_periods for durable recognition
+        await run(
+            `INSERT INTO user_editing_periods (user_id, is_enabled, duration, unit, start_event, allow_add, allow_edit, custom_expires_at, updated_at)
+             VALUES (?, 1, ?, 'minutes', 'window', ?, ?, ?, datetime('now'))
+             ON CONFLICT(user_id) DO UPDATE SET
+                is_enabled = 1,
+                allow_add = excluded.allow_add,
+                allow_edit = excluded.allow_edit,
+                custom_expires_at = excluded.custom_expires_at,
+                updated_at = datetime('now')`,
+            [
+                userId,
+                Math.round((end.getTime() - now.getTime()) / 60000),
+                actions.includes('add_accounts') ? 1 : 0,
+                (actions.includes('edit_accounts') || actions.includes('update_points')) ? 1 : 0,
+                endTimeIso
+            ]
+        );
+
+        // 4. Send notification to user
+        await run(
+            `INSERT INTO notifications (recipient_role, recipient_id, category, title, message, reference_id)
+             VALUES ('user', ?, 'access_granted', 'Temporary Editing Window Granted', ?, ?)`,
+            [
+                userId,
+                `The administrator has granted you an editing window until ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. You can now update points and edit account details.`,
+                String(resInsert.lastID)
+            ]
+        );
+
+        // 5. Audit log
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, result)
+             VALUES (?, ?, 'admin', ?, 'Scheduled Temporary Access Window', ?, 'success')`,
+            [req.user.id, req.user.email, userId, JSON.stringify({ startTimeIso, endTimeIso, actions })]
+        );
+
+        res.json({
+            success: true,
+            windowId: resInsert.lastID,
+            startTime: startTimeIso,
+            endTime: endTimeIso,
+            actions
+        });
+
+    } catch (error) {
+        console.error('Schedule Window Error:', error);
+        res.status(500).json({ error: 'Failed to schedule access window' });
+    }
+};
+
+// 1-Click Revoke / Lock to Read-Only
+const revokeUserWindow = async (req, res) => {
+    const userId = req.params.id;
+
+    try {
+        const user = await get(`SELECT * FROM app_users WHERE id = ?`, [userId]);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // Deactivate all temporary windows
+        await run(`UPDATE temporary_access_windows SET is_active = 0 WHERE user_id = ?`, [userId]);
+
+        // Remove write permissions
+        await run(
+            `DELETE FROM user_permissions 
+             WHERE user_id = ? AND permission_key IN ('update_points', 'edit_accounts', 'add_accounts', 'import_excel')`,
+            [userId]
+        );
+
+        // Disable user_editing_periods
+        await run(
+            `UPDATE user_editing_periods SET is_enabled = 0, allow_add = 0, allow_edit = 0 WHERE user_id = ?`,
+            [userId]
+        );
+
+        // Audit log
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, result)
+             VALUES (?, ?, 'admin', ?, 'Revoked Access Window (Locked to Read-Only)', '{}', 'success')`,
+            [req.user.id, req.user.email, userId]
+        );
+
+        res.json({ success: true, message: 'User returned to Read-Only mode' });
+    } catch (error) {
+        console.error('Revoke Window Error:', error);
+        res.status(500).json({ error: 'Failed to revoke access window' });
+    }
+};
+
 // Old / New Accounts Drag & Drop Classification
 const reclassifyAccounts = async (req, res) => {
     const { accountIds, targetClassification, reason } = req.body; // 'old' or 'new'
@@ -1021,6 +1202,9 @@ module.exports = {
     deleteUser,
     getUserDetails,
     updateUserPermissions,
+    quickToggleUserPermission,
+    scheduleUserWindow,
+    revokeUserWindow,
     createTemporaryAccessWindow,
     reclassifyAccounts,
     getRewardCatalog,

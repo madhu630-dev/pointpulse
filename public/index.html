@@ -606,6 +606,119 @@
                     </div>
                 </div>
 
+                <!-- VIEW: POINTS MANAGEMENT & ACCESS PERMISSIONS (ADMIN) -->
+                <div id="page-admin-points-perms" class="page-pane hidden">
+                    <div style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <h3 style="font-size: 1.3rem; font-weight: 700;"><i class="fa-solid fa-bolt" style="color: var(--secondary-color);"></i> Points & Access Permissions Management</h3>
+                            <p class="text-secondary" style="font-size: 0.88rem;">1-Click Read-Only vs. Read/Write toggles, temporary access scheduling, and instant points approval.</p>
+                        </div>
+                        <div style="display: flex; gap: 0.75rem;">
+                            <button class="btn secondary-btn" onclick="loadAdminPointsPerms()"><i class="fa-solid fa-rotate"></i> Refresh Access States</button>
+                        </div>
+                    </div>
+
+                    <!-- 2 COLUMN GRID: SCHEDULER + QUICK ACCESS TOGGLE MATRIX -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                        <!-- CARD 1: 1-CLICK TIME SCHEDULER -->
+                        <div class="table-card" style="padding: 1.5rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                                <h4 style="font-size: 1.05rem; font-weight: 700; color: var(--primary-color);">
+                                    <i class="fa-solid fa-clock"></i> Schedule Temporary Access Window
+                                </h4>
+                                <span class="badge badge-primary">Time-Bounded Access</span>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 1rem;">
+                                <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.35rem; display: block;">Select Target User / Operator *</label>
+                                <select id="sched-target-user" class="form-input" onchange="onScheduleTargetUserChange()"></select>
+                            </div>
+
+                            <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                    <span style="font-size: 0.85rem; font-weight: 600;">Current Access Status:</span>
+                                    <span id="sched-current-status-badge" class="badge badge-pending">Read-Only Mode</span>
+                                </div>
+                                <div id="sched-active-window-timer" class="text-secondary" style="font-size: 0.82rem;">No active temporary window. User is in Read-Only mode.</div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 1rem;">
+                                <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem; display: block;">Quick Duration Presets:</label>
+                                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                    <button type="button" class="btn secondary-btn sched-preset-btn" onclick="selectScheduleDuration(30, this)">⏱️ 30 Mins</button>
+                                    <button type="button" class="btn secondary-btn sched-preset-btn active" style="background: var(--primary-color); color: #fff;" onclick="selectScheduleDuration(60, this)">⏱️ 1 Hour</button>
+                                    <button type="button" class="btn secondary-btn sched-preset-btn" onclick="selectScheduleDuration(120, this)">⏱️ 2 Hours</button>
+                                    <button type="button" class="btn secondary-btn sched-preset-btn" onclick="selectScheduleDuration(1440, this)">⏱️ 24 Hours</button>
+                                    <button type="button" class="btn secondary-btn sched-preset-btn" onclick="selectScheduleDuration('custom', this)">📅 Custom</button>
+                                </div>
+                                <input type="hidden" id="sched-duration-minutes" value="60">
+                                <div id="sched-custom-time-container" style="display: none; margin-top: 0.75rem;">
+                                    <label style="font-size: 0.8rem; color: var(--text-secondary); display: block; margin-bottom: 0.25rem;">Custom Window End Date & Time:</label>
+                                    <input type="datetime-local" id="sched-custom-endtime" class="form-input">
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 1.5rem;">
+                                <label style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem; display: block;">Permitted Actions During Window:</label>
+                                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; cursor: pointer;">
+                                        <input type="checkbox" id="sched-action-points" checked style="accent-color: var(--primary-color);">
+                                        <strong>Points Updating</strong> (Allows entering & saving updated points)
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; cursor: pointer;">
+                                        <input type="checkbox" id="sched-action-edit" checked style="accent-color: var(--primary-color);">
+                                        <strong>Account Information Editing</strong> (Allows editing profile, server, credentials)
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; cursor: pointer;">
+                                        <input type="checkbox" id="sched-action-add" style="accent-color: var(--primary-color);">
+                                        <strong>Add New Accounts & Import Excel</strong> (Allows registering accounts)
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                                <button type="button" class="btn primary-btn" style="flex: 1;" onclick="submitScheduleWindow()">
+                                    <i class="fa-solid fa-play"></i> Grant Temporary Access Window
+                                </button>
+                                <button type="button" class="btn danger-btn" onclick="submitRevokeWindow()" title="Immediately lock to Read-Only">
+                                    <i class="fa-solid fa-lock"></i> Lock to Read-Only
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- CARD 2: QUICK TOGGLE PERMISSION MATRIX FOR ALL OPERATORS -->
+                        <div class="table-card" style="padding: 1.5rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                                <h4 style="font-size: 1.05rem; font-weight: 700; color: var(--secondary-color);">
+                                    <i class="fa-solid fa-sliders"></i> 1-Click Permissions & Mode Toggles
+                                </h4>
+                                <span class="badge badge-active">Live Instant Toggle</span>
+                            </div>
+                            <p class="text-secondary" style="font-size: 0.84rem; margin-bottom: 1rem;">
+                                Click any toggle below to immediately switch between <strong>Read-Only 🔒</strong> and <strong>Write ✏️</strong> mode without filling forms.
+                            </p>
+
+                            <div id="admin-user-quick-toggles-container" style="display: flex; flex-direction: column; gap: 1rem; max-height: 520px; overflow-y: auto;">
+                                <!-- Rendered dynamically per user -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PENDING ACCESS REQUESTS WITH 1-CLICK GRANT BUTTONS -->
+                    <div class="table-card" style="padding: 1.5rem;">
+                        <div class="table-header-bar" style="margin-bottom: 1rem;">
+                            <div>
+                                <h4 style="font-size: 1.1rem; font-weight: 700;"><i class="fa-solid fa-inbox"></i> Incoming Points & Access Requests</h4>
+                                <p class="text-secondary" style="font-size: 0.85rem;">Fast 1-click approvals with preset 1-hour or 2-hour editing windows.</p>
+                            </div>
+                            <span id="admin-pending-req-count" class="badge badge-pending">0 Pending</span>
+                        </div>
+                        <div id="admin-access-requests-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+
                 <!-- VIEW: REWARD CATALOGUE (ADMIN) -->
                 <div id="page-admin-catalog" class="page-pane hidden">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">

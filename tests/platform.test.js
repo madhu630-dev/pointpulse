@@ -298,6 +298,15 @@ async function runTests() {
         assert.strictEqual(grantRes.body.success, true);
     });
 
+    await test('Administrator can revoke temporary window (locks back to Read-Only)', async () => {
+        const revokeRes = await api(`/api/admin/users/${testUserId}/revoke-window`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        assert.strictEqual(revokeRes.status, 200);
+        assert.strictEqual(revokeRes.body.success, true);
+    });
+
     console.log('\n--- SUITE 3: ACCOUNT ISOLATION & DATA SECURITY ---');
 
     await test('Strict Data Isolation: User only accesses their own assigned accounts', async () => {
@@ -530,14 +539,29 @@ async function runTests() {
 
     let createdAccId = null;
 
-    await test('User checks free editing period status (active upon approval)', async () => {
+    await test('User checks editing status (strictly starts in Read-Only mode)', async () => {
         const res = await api('/api/accounts/editing-status', {
             headers: { 'Authorization': `Bearer ${testUserToken}` }
         });
         assert.strictEqual(res.status, 200);
-        assert.strictEqual(res.body.isWithinWindow, true);
-        assert.strictEqual(res.body.canAddAccounts, true);
-        assert.strictEqual(res.body.canEditAccounts, true);
+        assert.strictEqual(res.body.isReadOnly, true);
+    });
+
+    await test('Administrator grants temporary access window to user', async () => {
+        const schedRes = await api(`/api/admin/users/${testUserId}/schedule-window`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${adminToken}` },
+            body: { durationMinutes: 120, permittedActions: ['add_accounts', 'edit_accounts', 'update_points'] }
+        });
+        assert.strictEqual(schedRes.status, 200);
+        assert.strictEqual(schedRes.body.success, true);
+
+        const statusRes = await api('/api/accounts/editing-status', {
+            headers: { 'Authorization': `Bearer ${testUserToken}` }
+        });
+        assert.strictEqual(statusRes.status, 200);
+        assert.strictEqual(statusRes.body.canAddAccounts, true);
+        assert.strictEqual(statusRes.body.canEditAccounts, true);
     });
 
     await test('User adds an account with comprehensive plaintext credentials during active free editing period', async () => {

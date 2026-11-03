@@ -42,18 +42,38 @@ const getAccounts = async (req, res) => {
 
         const accountIds = accounts.map(a => a.id);
 
-        // Fetch Points & Redemptions
-        const { data: points } = await supabase
-            .from('Points')
-            .select('*')
-            .in('user_id', accountIds)
-            .order('id', { ascending: true });
+        // Fetch Points with pagination (PostgREST caps individual queries at 1,000 rows)
+        let points = [];
+        let fromOffset = 0;
+        const batchSize = 1000;
+        while (true) {
+            const { data: ptChunk, error: ptError } = await supabase
+                .from('Points')
+                .select('*')
+                .in('user_id', accountIds)
+                .order('id', { ascending: true })
+                .range(fromOffset, fromOffset + batchSize - 1);
+            if (ptError || !ptChunk || ptChunk.length === 0) break;
+            points = points.concat(ptChunk);
+            if (ptChunk.length < batchSize) break;
+            fromOffset += batchSize;
+        }
 
-        const { data: redemptions } = await supabase
-            .from('Redemptions')
-            .select('*')
-            .in('user_id', accountIds)
-            .order('redeemed_at', { ascending: false });
+        // Fetch Redemptions with pagination
+        let redemptions = [];
+        let redFrom = 0;
+        while (true) {
+            const { data: redChunk, error: redError } = await supabase
+                .from('Redemptions')
+                .select('*')
+                .in('user_id', accountIds)
+                .order('redeemed_at', { ascending: false })
+                .range(redFrom, redFrom + batchSize - 1);
+            if (redError || !redChunk || redChunk.length === 0) break;
+            redemptions = redemptions.concat(redChunk);
+            if (redChunk.length < batchSize) break;
+            redFrom += batchSize;
+        }
 
         const redemptionsByAccount = {};
         if (redemptions) {
@@ -150,14 +170,42 @@ const getAccounts = async (req, res) => {
 const getEditingStatus = async (req, res) => {
     try {
         const status = await getUserEditingPeriodStatus(req.user.id);
+        const userPerms = req.user.permissions || [];
+        const hasPointsPerm = userPerms.includes('update_points');
+        const hasEditPerm = userPerms.includes('edit_accounts');
+        const hasAddPerm = userPerms.includes('add_accounts');
+        const hasImportPerm = userPerms.includes('import_excel');
+
+        const canUpdatePts = req.user.role === 'admin' || hasPointsPerm || Boolean(status.canUpdatePoints);
+        const canEditAcc = req.user.role === 'admin' || hasEditPerm || Boolean(status.canEdit);
+        const canAddAcc = req.user.role === 'admin' || hasAddPerm || Boolean(status.canAdd);
+        const canImport = req.user.role === 'admin' || hasImportPerm || Boolean(status.canAdd);
+
+        const isReadOnly = (req.user.role !== 'admin') && !canUpdatePts && !canEditAcc && !canAddAcc;
+
+        let statusDisplay = 'Read-Only Mode (Request Access)';
+        let badgeClass = 'badge-pending';
+        if (req.user.role === 'admin') {
+            statusDisplay = 'Administrator (Full Access)';
+            badgeClass = 'badge-active';
+        } else if (status.isTemporaryWindow) {
+            statusDisplay = `Active Window (${status.remainingFormatted})`;
+            badgeClass = 'badge-active';
+        } else if (!isReadOnly) {
+            statusDisplay = 'Write Access Granted';
+            badgeClass = 'badge-active';
+        }
+
         res.json({
             ...status,
-            canAddAccounts: status.canAdd,
-            canEditAccounts: status.canEdit,
-            canImportExcel: status.canAdd,
-            isWithinWindow: status.isFreePeriodActive,
-            statusText: status.isFreePeriodActive ? `Free Editing Active (${status.remainingFormatted})` : 'Free Editing Period Expired',
-            badgeClass: status.isFreePeriodActive ? 'badge-active' : 'badge-pending'
+            isReadOnly,
+            canAddAccounts: canAddAcc,
+            canEditAccounts: canEditAcc,
+            canUpdatePoints: canUpdatePts,
+            canImportExcel: canImport,
+            isWithinWindow: !isReadOnly,
+            statusText: statusDisplay,
+            badgeClass
         });
     } catch (error) {
         console.error('Editing status error:', error);
@@ -273,7 +321,7 @@ const getAccountDetails = async (req, res) => {
                 isFreePeriodActive: editingStatus.isFreePeriodActive,
                 isWithinWindow: editingStatus.isFreePeriodActive,
                 remainingFormatted: editingStatus.remainingFormatted,
-                statusText: editingStatus.isFreePeriodActive ? `Free Editing Active (${editingStatus.remainingFormatted})` : 'Free Editing Period Expired',
+                statusText: editingStatus.statusText || (editingStatus.isFreePeriodActive ? `Editing Active (${editingStatus.remainingFormatted})` : 'Read-Only Mode (Request Access)'),
                 expiresAt: editingStatus.expiresAt
             },
             isAdmin: user.role === 'admin'
@@ -296,14 +344,14 @@ const createAccount = async (req, res) => {
 
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
-    // Enforce editing period restriction on backend
+    // Enforce editing restriction on backend (Read-Only by default)
     if (user.role !== 'admin') {
         const editStatus = await getUserEditingPeriodStatus(user.id);
         const hasAddPerm = user.permissions && user.permissions.includes('add_accounts');
         if (!hasAddPerm && !editStatus.canAdd) {
             return res.status(403).json({ 
-                error: 'Account addition is locked. Your free editing period has expired. Please submit an access request to the administrator.',
-                code: 'EDITING_EXPIRED'
+                error: 'Account creation is locked (Read-Only mode). Please submit an access request to the administrator in Request Center.',
+                code: 'READ_ONLY'
             });
         }
     }
@@ -448,14 +496,14 @@ const updateAccount = async (req, res) => {
             return res.status(403).json({ error: 'Access denied. You do not own this account.' });
         }
 
-        // Enforce editing period restriction on backend
+        // Enforce editing restriction on backend (Read-Only by default)
         if (user.role !== 'admin') {
             const editStatus = await getUserEditingPeriodStatus(user.id);
             const hasEditPerm = user.permissions && user.permissions.includes('edit_accounts');
             if (!hasEditPerm && !editStatus.canEdit) {
                 return res.status(403).json({ 
-                    error: 'Account editing is locked. Your free editing period has expired. Please submit a correction request to the administrator.',
-                    code: 'EDITING_EXPIRED'
+                    error: 'Account editing is locked (Read-Only mode). Please submit a correction request to the administrator in Request Center.',
+                    code: 'READ_ONLY'
                 });
             }
         }
@@ -683,6 +731,31 @@ const updatePoints = async (req, res) => {
             return res.status(403).json({ error: 'Access denied. You do not own this account.' });
         }
 
+        // Strictly enforce Read-Only mode for non-admin operators
+        if (user.role !== 'admin') {
+            const hasPointsPerm = user.permissions && user.permissions.includes('update_points');
+            const nowIso = new Date().toISOString();
+            const activeWindow = await get(
+                `SELECT * FROM temporary_access_windows 
+                 WHERE user_id = ? AND is_active = 1 AND start_time <= ? AND end_time >= ? 
+                 ORDER BY id DESC LIMIT 1`,
+                [user.id, nowIso, nowIso]
+            );
+            let windowPermitted = false;
+            if (activeWindow) {
+                try {
+                    const acts = JSON.parse(activeWindow.permitted_actions || '[]');
+                    if (acts.includes('update_points') || acts.includes('all')) windowPermitted = true;
+                } catch (e) {}
+            }
+            if (!hasPointsPerm && !windowPermitted) {
+                return res.status(403).json({
+                    error: 'Points update is locked in Read-Only mode. Please submit an access request to the administrator in Request Center.',
+                    code: 'READ_ONLY'
+                });
+            }
+        }
+
         const { data: lastPointRow } = await supabase
             .from('Points')
             .select('points')
@@ -695,12 +768,17 @@ const updatePoints = async (req, res) => {
         const diff = newPointsVal - prevPoints;
         const now = new Date().toISOString();
 
-        await supabase.from('Points').insert([{
+        const { error: insertErr } = await supabase.from('Points').insert([{
             user_id: accountId,
             points: newPointsVal,
             date: reason || 'Manual Point Update',
             updated_at: now
         }]);
+
+        if (insertErr) {
+            console.error('Supabase Points Insert Error:', insertErr);
+            throw insertErr;
+        }
 
         await run(
             `INSERT INTO points_audit_log (account_id, user_id, previous_points, new_points, difference, updated_by, updated_by_name, source, auth_ref)
@@ -713,6 +791,16 @@ const updatePoints = async (req, res) => {
              VALUES (?, ?, ?, ?, 'Updated Account Points', ?, ?, ?, 'success')`,
             [user.id, user.email, user.role, ownerId, JSON.stringify({ points: prevPoints }), JSON.stringify({ points: newPointsVal, diff }), String(accountId)]
         );
+
+        if (io) {
+            io.emit('points_updated', {
+                accountId,
+                previousPoints: prevPoints,
+                newPoints: newPointsVal,
+                difference: diff
+            });
+            io.emit('accounts_updated');
+        }
 
         res.json({
             success: true,
@@ -733,14 +821,14 @@ const uploadExcel = async (req, res) => {
     const user = req.user;
     const isFresh = (req.body.freshUpload === 'true' || req.body.isFresh === 'true' || req.body.isFresh === true);
 
-    // Enforce editing period restriction on backend
+    // Enforce editing restriction on backend (Read-Only by default)
     if (user.role !== 'admin') {
         const editStatus = await getUserEditingPeriodStatus(user.id);
         const hasImportPerm = user.permissions && user.permissions.includes('import_excel');
         if (!hasImportPerm && !editStatus.canAdd) {
             return res.status(403).json({ 
-                error: 'Account addition & spreadsheet import is locked. Your free editing period has expired. Please submit an access request to the administrator.',
-                code: 'EDITING_EXPIRED'
+                error: 'Account addition & spreadsheet import is locked (Read-Only mode). Please submit an access request to the administrator.',
+                code: 'READ_ONLY'
             });
         }
     }

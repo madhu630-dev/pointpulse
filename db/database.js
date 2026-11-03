@@ -374,13 +374,15 @@ async function initSchema() {
         )
     `);
 
-    // Seed default global editing period if not present
+    // Seed default global editing period if not present (Strictly Read-Only by default)
     const globalPeriod = await get(`SELECT * FROM user_editing_periods WHERE user_id IS NULL OR user_id = 0`);
     if (!globalPeriod) {
         await run(`
             INSERT INTO user_editing_periods (user_id, is_enabled, duration, unit, start_event, allow_add, allow_edit)
-            VALUES (0, 1, 7, 'days', 'approval', 1, 1)
+            VALUES (0, 0, 0, 'hours', 'approval', 0, 0)
         `);
+    } else {
+        await run(`UPDATE user_editing_periods SET is_enabled = 0, allow_add = 0, allow_edit = 0 WHERE user_id = 0 OR user_id IS NULL`);
     }
 
     // Ensure classification and user_id exist on local Users table if present
@@ -483,10 +485,9 @@ async function initSchema() {
         operatorUser.status = 'approved';
     }
 
-    // Provision operator permissions for laptopmew1@gmail.com
+    // Provision operator permissions for laptopmew1@gmail.com (Strictly Read-Only by default)
     const operatorPerms = [
-        'view_accounts', 'view_old_accounts', 'view_new_accounts', 'submit_requests', 
-        'view_redemption', 'add_accounts', 'edit_accounts', 'import_excel', 'update_points'
+        'view_accounts', 'view_old_accounts', 'view_new_accounts', 'submit_requests', 'view_redemption'
     ];
     for (const p of operatorPerms) {
         await run(
@@ -494,6 +495,13 @@ async function initSchema() {
             [operatorUser.id, p, adminUser.id]
         );
     }
+    // Remove write/edit permissions from operator by default unless within an active, unexpired admin temporary window
+    await run(
+        `DELETE FROM user_permissions 
+         WHERE user_id = ? AND permission_key IN ('update_points', 'edit_accounts', 'add_accounts', 'import_excel') 
+         AND (expires_at IS NULL OR expires_at <= datetime('now'))`,
+        [operatorUser.id]
+    );
 
     // Fetch all accounts from Supabase and ensure they are populated into account_metadata for laptopmew1@gmail.com
     try {
@@ -538,13 +546,63 @@ initSchema().catch(err => console.error('[PointPulse DB Init Error]', err));
 // Calculate user editing status & remaining duration
 async function getUserEditingPeriodStatus(userId) {
     const user = await get(`SELECT id, role, status, approved_at, created_at FROM app_users WHERE id = ?`, [userId]);
-    if (!user) return { canAdd: false, canEdit: false, isFreePeriodActive: false, message: 'User not found' };
+    if (!user) return { canAdd: false, canEdit: false, canUpdatePoints: false, isFreePeriodActive: false, message: 'User not found' };
 
     if (user.role === 'admin') {
-        return { canAdd: true, canEdit: true, isFreePeriodActive: true, isUnlimited: true, remainingFormatted: 'Unlimited (Administrator)' };
+        return { 
+            canAdd: true, 
+            canEdit: true, 
+            canUpdatePoints: true, 
+            isFreePeriodActive: true, 
+            isUnlimited: true, 
+            remainingFormatted: 'Unlimited (Administrator)',
+            statusText: 'Administrator (Unlimited Access)'
+        };
     }
 
-    // Check user-specific period first, fallback to global default (user_id = 0)
+    // 1. Check if user has an active temporary access window
+    const nowIso = new Date().toISOString();
+    const activeWindow = await get(
+        `SELECT * FROM temporary_access_windows 
+         WHERE user_id = ? AND is_active = 1 AND start_time <= ? AND end_time >= ? 
+         ORDER BY id DESC LIMIT 1`,
+        [userId, nowIso, nowIso]
+    );
+
+    if (activeWindow) {
+        let actions = [];
+        try {
+            actions = JSON.parse(activeWindow.permitted_actions || '[]');
+        } catch (e) {
+            actions = ['update_points'];
+        }
+        const winEnd = new Date(activeWindow.end_time);
+        const winRemainingMs = Math.max(0, winEnd.getTime() - Date.now());
+        const winRemainingHours = Math.floor(winRemainingMs / (3600 * 1000));
+        const winRemainingMins = Math.floor((winRemainingMs % (3600 * 1000)) / (60 * 1000));
+        const winFormatted = winRemainingHours > 0 
+            ? `${winRemainingHours}h ${winRemainingMins}m remaining` 
+            : `${winRemainingMins}m remaining`;
+
+        const canUpdatePts = actions.includes('update_points') || actions.includes('all');
+        const canEditAcc = actions.includes('edit_accounts') || actions.includes('all');
+        const canAddAcc = actions.includes('add_accounts') || actions.includes('all');
+
+        return {
+            canAdd: canAddAcc,
+            canEdit: canEditAcc,
+            canUpdatePoints: canUpdatePts,
+            isFreePeriodActive: true,
+            isTemporaryWindow: true,
+            expiresAt: winEnd.toISOString(),
+            remainingMs: winRemainingMs,
+            remainingFormatted: winFormatted,
+            statusText: `Temporary Window Active (${winFormatted})`,
+            permittedActions: actions
+        };
+    }
+
+    // 2. Check user-specific period first, fallback to global default (user_id = 0)
     let period = await get(`SELECT * FROM user_editing_periods WHERE user_id = ?`, [userId]);
     if (!period) {
         period = await get(`SELECT * FROM user_editing_periods WHERE user_id = 0 OR user_id IS NULL`);
@@ -554,8 +612,12 @@ async function getUserEditingPeriodStatus(userId) {
         return {
             canAdd: false,
             canEdit: false,
+            canUpdatePoints: false,
             isFreePeriodActive: false,
-            message: 'Free editing is disabled by the administrator. Please request access.'
+            isWithinWindow: false,
+            remainingFormatted: 'Read-Only (Locked)',
+            statusText: 'Read-Only Mode (Request Access)',
+            message: 'Your account is in Read-Only mode. Please submit an access request to the administrator.'
         };
     }
 
@@ -588,10 +650,13 @@ async function getUserEditingPeriodStatus(userId) {
     return {
         canAdd: isActive && Boolean(period.allow_add),
         canEdit: isActive && Boolean(period.allow_edit),
+        canUpdatePoints: isActive && Boolean(period.allow_edit),
         isFreePeriodActive: isActive,
+        isWithinWindow: isActive,
         expiresAt: expiresAt.toISOString(),
         remainingMs: Math.max(0, remainingMs),
-        remainingFormatted,
+        remainingFormatted: isActive ? remainingFormatted : 'Read-Only (Locked)',
+        statusText: isActive ? `Editing Active (${remainingFormatted})` : 'Read-Only Mode (Request Access)',
         duration: period.duration,
         unit: period.unit,
         startEvent: period.start_event

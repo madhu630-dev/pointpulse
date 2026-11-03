@@ -148,6 +148,53 @@ const updateRequestStatus = async (req, res) => {
             [status, adminResponse || '', req.user.id, now, now, reqRow.id]
         );
 
+        // If approved with an automatic access window granted
+        let windowGrantedText = '';
+        if (status === 'Approved' && req.body.grantWindowMinutes) {
+            const mins = parseInt(req.body.grantWindowMinutes) || 120;
+            const winNow = new Date();
+            const winEnd = new Date(winNow.getTime() + (mins * 60 * 1000));
+            const acts = reqRow.category === 'points_update' 
+                ? ['update_points'] 
+                : ['update_points', 'edit_accounts'];
+
+            const winStartIso = winNow.toISOString();
+            const winEndIso = winEnd.toISOString();
+
+            await run(
+                `INSERT INTO temporary_access_windows (user_id, start_time, end_time, permitted_actions, is_active, created_by)
+                 VALUES (?, ?, ?, ?, 1, ?)`,
+                [reqRow.user_id, winStartIso, winEndIso, JSON.stringify(acts), req.user.id]
+            );
+
+            for (const a of acts) {
+                await run(
+                    `INSERT OR REPLACE INTO user_permissions (user_id, permission_key, granted_at, expires_at, granted_by)
+                     VALUES (?, ?, datetime('now'), ?, ?)`,
+                    [reqRow.user_id, a, winEndIso, req.user.id]
+                );
+            }
+
+            await run(
+                `INSERT INTO user_editing_periods (user_id, is_enabled, duration, unit, start_event, allow_add, allow_edit, custom_expires_at, updated_at)
+                 VALUES (?, 1, ?, 'minutes', 'window', ?, 1, ?, datetime('now'))
+                 ON CONFLICT(user_id) DO UPDATE SET
+                    is_enabled = 1,
+                    allow_add = excluded.allow_add,
+                    allow_edit = excluded.allow_edit,
+                    custom_expires_at = excluded.custom_expires_at,
+                    updated_at = datetime('now')`,
+                [
+                    reqRow.user_id,
+                    mins,
+                    acts.includes('add_accounts') ? 1 : 0,
+                    winEndIso
+                ]
+            );
+
+            windowGrantedText = ` Access window granted for ${Math.round(mins / 60)}h until ${winEnd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
+        }
+
         // Notify User
         await run(
             `INSERT INTO notifications (recipient_role, recipient_id, category, title, message, reference_id)
@@ -155,7 +202,7 @@ const updateRequestStatus = async (req, res) => {
             [
                 reqRow.user_id,
                 `Request ${reqRow.request_id} Updated: ${status}`,
-                adminResponse || `Your request '${reqRow.subject}' status has been updated to ${status}.`,
+                (adminResponse || `Your request '${reqRow.subject}' status has been updated to ${status}.`) + windowGrantedText,
                 reqRow.request_id
             ]
         );

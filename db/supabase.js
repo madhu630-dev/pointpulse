@@ -50,6 +50,10 @@ class MemoryQueryBuilder {
         this._limit = n;
         return this;
     }
+    range(from, to) {
+        this._range = { from, to };
+        return this;
+    }
     single() {
         this._single = true;
         return this;
@@ -88,7 +92,9 @@ class MemoryQueryBuilder {
                 return 0;
             });
         }
-        if (this._limit !== null) {
+        if (this._range) {
+            result = result.slice(this._range.from, this._range.to + 1);
+        } else if (this._limit !== null) {
             result = result.slice(0, this._limit);
         }
         const data = this._single ? (result[0] || null) : result;

@@ -762,6 +762,7 @@ function showAdminPage(pageId) {
     if (pageId === 'admin-users') loadAdminUsers();
     if (pageId === 'admin-all-accounts') loadAllAccounts();
     if (pageId === 'admin-classification') loadClassificationBoard();
+    if (pageId === 'admin-points-perms') loadAdminPointsPerms();
     if (pageId === 'admin-catalog') loadAdminRewardCatalog();
     if (pageId === 'admin-matching') loadMatchingData();
     if (pageId === 'admin-notifications') loadAdminNotifications();
@@ -1058,6 +1059,16 @@ function switchUserTab(tabName) {
     if (!data) return;
 
     if (tabName === 'summary') {
+        const userPermKeys = data.permissions.map(p => p.permission_key);
+        const hasPoints = userPermKeys.includes('update_points');
+        const hasEdit = userPermKeys.includes('edit_accounts');
+        const hasAdd = userPermKeys.includes('add_accounts');
+        const hasImport = userPermKeys.includes('import_excel');
+
+        const now = new Date();
+        const activeWin = data.tempWindows?.find(w => w.is_active && new Date(w.start_time) <= now && new Date(w.end_time) >= now);
+        const isReadOnly = !hasPoints && !hasEdit && !hasAdd && !activeWin;
+
         container.innerHTML = `
             <div class="kpi-grid">
                 <div class="kpi-card"><div class="kpi-title">Managed Accounts</div><div class="kpi-value">${data.accounts.length}</div></div>
@@ -1065,6 +1076,77 @@ function switchUserTab(tabName) {
                 <div class="kpi-card kpi-warning"><div class="kpi-title">Confirmed Redemptions</div><div class="kpi-value">${data.redemptions.length}</div></div>
                 <div class="kpi-card kpi-secondary"><div class="kpi-title">Active Permissions</div><div class="kpi-value">${data.permissions.length}</div></div>
             </div>
+
+            <!-- QUICK ACCESS MODE & TOGGLES CARD -->
+            <div class="table-card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <div>
+                        <h4 style="font-weight: 700; color: var(--secondary-color);"><i class="fa-solid fa-sliders"></i> Access Mode & Quick Feature Toggles</h4>
+                        <p class="text-secondary" style="font-size: 0.82rem;">1-Click switch between Read-Only 🔒 and Write ✏️ modes for this operator.</p>
+                    </div>
+                    <div>
+                        ${activeWin ? `
+                            <span class="badge badge-active">🟢 Temporary Window Active (${Math.round((new Date(activeWin.end_time) - now) / 60000)}m remaining)</span>
+                        ` : (isReadOnly ? `
+                            <span class="badge badge-pending">🔒 Read-Only Mode (Locked)</span>
+                        ` : `
+                            <span class="badge badge-active">✏️ Write Access Enabled</span>
+                        `)}
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+                    <!-- TOGGLE 1: POINTS UPDATING -->
+                    <div style="background: rgba(15, 23, 42, 0.4); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Points Updating</div>
+                        <button class="btn ${hasPoints ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasPoints ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${data.user.id}, 'update_points', ${!hasPoints})">
+                            <i class="fa-solid fa-${hasPoints ? 'check' : 'lock'}"></i> ${hasPoints ? 'Write Allowed ✏️' : 'Read-Only 🔒'}
+                        </button>
+                    </div>
+
+                    <!-- TOGGLE 2: ACCOUNT EDITING -->
+                    <div style="background: rgba(15, 23, 42, 0.4); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Account Info Editing</div>
+                        <button class="btn ${hasEdit ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasEdit ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${data.user.id}, 'edit_accounts', ${!hasEdit})">
+                            <i class="fa-solid fa-${hasEdit ? 'check' : 'lock'}"></i> ${hasEdit ? 'Write Allowed ✏️' : 'Read-Only 🔒'}
+                        </button>
+                    </div>
+
+                    <!-- TOGGLE 3: ADD ACCOUNTS -->
+                    <div style="background: rgba(15, 23, 42, 0.4); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Add Accounts</div>
+                        <button class="btn ${hasAdd ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasAdd ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${data.user.id}, 'add_accounts', ${!hasAdd})">
+                            <i class="fa-solid fa-${hasAdd ? 'plus' : 'ban'}"></i> ${hasAdd ? 'Allowed ➕' : 'Blocked 🔒'}
+                        </button>
+                    </div>
+
+                    <!-- TOGGLE 4: IMPORT EXCEL -->
+                    <div style="background: rgba(15, 23, 42, 0.4); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Excel Upload</div>
+                        <button class="btn ${hasImport ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasImport ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${data.user.id}, 'import_excel', ${!hasImport})">
+                            <i class="fa-solid fa-${hasImport ? 'file-excel' : 'ban'}"></i> ${hasImport ? 'Allowed 📥' : 'Blocked 🔒'}
+                        </button>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button class="btn primary-btn" style="font-size: 0.78rem; padding: 0.4rem 0.8rem;" onclick="switchUserTab('permissions')">
+                        <i class="fa-solid fa-clock"></i> Schedule Access Window
+                    </button>
+                    <button class="btn danger-btn" style="font-size: 0.78rem; padding: 0.4rem 0.8rem;" onclick="revokeDossierUserWindow(${data.user.id})">
+                        <i class="fa-solid fa-lock"></i> Lock to Read-Only
+                    </button>
+                </div>
+            </div>
+
             <div class="table-card" style="padding: 1.5rem;">
                 <h4 style="font-weight: 700; margin-bottom: 1rem;">Registration Profile Dossier</h4>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.9rem;">
@@ -1130,8 +1212,82 @@ function switchUserTab(tabName) {
         ];
 
         const userPermKeys = data.permissions.map(p => p.permission_key);
+        const hasPoints = userPermKeys.includes('update_points');
+        const hasEdit = userPermKeys.includes('edit_accounts');
+        const hasAdd = userPermKeys.includes('add_accounts');
+        const hasImport = userPermKeys.includes('import_excel');
+
+        const now = new Date();
+        const activeWin = data.tempWindows?.find(w => w.is_active && new Date(w.start_time) <= now && new Date(w.end_time) >= now);
 
         container.innerHTML = `
+            <!-- CARD 1: 1-CLICK FEATURE TOGGLES -->
+            <div class="table-card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                    <div>
+                        <h4 style="font-weight: 700; color: var(--secondary-color);"><i class="fa-solid fa-toggle-on"></i> Quick Feature Toggles (1-Click Read-Only vs. Write)</h4>
+                        <p class="text-secondary" style="font-size: 0.82rem;">Changes take effect immediately without needing to click save.</p>
+                    </div>
+                    <span class="badge ${activeWin ? 'badge-active' : (hasPoints || hasEdit ? 'badge-active' : 'badge-pending')}">
+                        ${activeWin ? '🟢 Window Active' : (hasPoints || hasEdit ? '✏️ Write Enabled' : '🔒 Read-Only')}
+                    </span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
+                    <div style="background: rgba(15, 23, 42, 0.4); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Points Updating</div>
+                        <button class="btn ${hasPoints ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasPoints ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${data.user.id}, 'update_points', ${!hasPoints})">
+                            <i class="fa-solid fa-${hasPoints ? 'check' : 'lock'}"></i> ${hasPoints ? 'Write Allowed ✏️' : 'Read-Only 🔒'}
+                        </button>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.4); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Account Info Editing</div>
+                        <button class="btn ${hasEdit ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasEdit ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${data.user.id}, 'edit_accounts', ${!hasEdit})">
+                            <i class="fa-solid fa-${hasEdit ? 'check' : 'lock'}"></i> ${hasEdit ? 'Write Allowed ✏️' : 'Read-Only 🔒'}
+                        </button>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.4); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Add Accounts</div>
+                        <button class="btn ${hasAdd ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasAdd ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${data.user.id}, 'add_accounts', ${!hasAdd})">
+                            <i class="fa-solid fa-${hasAdd ? 'plus' : 'ban'}"></i> ${hasAdd ? 'Allowed ➕' : 'Blocked 🔒'}
+                        </button>
+                    </div>
+                    <div style="background: rgba(15, 23, 42, 0.4); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Excel Upload</div>
+                        <button class="btn ${hasImport ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasImport ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${data.user.id}, 'import_excel', ${!hasImport})">
+                            <i class="fa-solid fa-${hasImport ? 'file-excel' : 'ban'}"></i> ${hasImport ? 'Allowed 📥' : 'Blocked 🔒'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CARD 2: QUICK ACCESS WINDOW SCHEDULER -->
+            <div class="table-card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+                    <div>
+                        <h4 style="font-weight: 700; color: var(--primary-color);"><i class="fa-solid fa-clock"></i> Schedule Temporary Access Window</h4>
+                        <p class="text-secondary" style="font-size: 0.82rem;">Grant temporary write access for a specific duration.</p>
+                    </div>
+                    ${activeWin ? `<button class="btn danger-btn" style="font-size: 0.78rem;" onclick="revokeDossierUserWindow(${data.user.id})"><i class="fa-solid fa-lock"></i> Revoke Window Now</button>` : ''}
+                </div>
+
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                    <button class="btn secondary-btn" style="font-size: 0.8rem;" onclick="scheduleDossierWindow(${data.user.id}, 30)">⏱️ 30 Mins</button>
+                    <button class="btn primary-btn" style="font-size: 0.8rem;" onclick="scheduleDossierWindow(${data.user.id}, 60)">⏱️ 1 Hour</button>
+                    <button class="btn secondary-btn" style="font-size: 0.8rem;" onclick="scheduleDossierWindow(${data.user.id}, 120)">⏱️ 2 Hours</button>
+                    <button class="btn secondary-btn" style="font-size: 0.8rem;" onclick="scheduleDossierWindow(${data.user.id}, 1440)">⏱️ 24 Hours</button>
+                </div>
+            </div>
+
+            <!-- CARD 3: GRANULAR PERMISSIONS -->
             <div class="table-card" style="padding: 1.5rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                     <div>
@@ -1139,7 +1295,7 @@ function switchUserTab(tabName) {
                         <p class="text-secondary" style="font-size: 0.85rem;">Enforce strict backend authorization for every action.</p>
                     </div>
                     <button class="btn secondary-btn" onclick="openTempWindowModal(${data.user.id}, '${escapeHtml(data.user.name)}')">
-                        <i class="fa-solid fa-clock"></i> Grant Temp Window
+                        <i class="fa-solid fa-clock"></i> Custom ISO Window
                     </button>
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
@@ -1151,6 +1307,92 @@ function switchUserTab(tabName) {
                     `).join('')}
                 </div>
                 <button class="btn primary-btn" onclick="saveUserPermissions(${data.user.id})">Save Permissions</button>
+            </div>
+        `;
+    } else if (tabName === 'requests') {
+        const requests = data.requests || [];
+        container.innerHTML = `
+            <div class="table-card" style="padding: 1.5rem;">
+                <h4 style="font-weight: 700; margin-bottom: 1rem;"><i class="fa-solid fa-paper-plane"></i> User Requests & Access Tickets (${requests.length})</h4>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    ${requests.length === 0 ? '<div style="text-align: center; color: var(--text-muted); padding: 2rem;">No requests submitted by this user yet.</div>' :
+                    requests.map(r => `
+                        <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.35rem;">
+                                    <span class="badge badge-primary">${r.request_id}</span>
+                                    <span class="badge ${r.status === 'Approved' ? 'badge-active' : (r.status === 'Pending' ? 'badge-pending' : 'badge-banned')}">${r.status.toUpperCase()}</span>
+                                    <strong style="color: #fff; font-size: 0.9rem;">${escapeHtml(r.subject)}</strong>
+                                </div>
+                                <div class="text-secondary" style="font-size: 0.85rem; margin-bottom: 0.35rem;">${escapeHtml(r.message)}</div>
+                                <div class="text-muted" style="font-size: 0.76rem;">Submitted on ${new Date(r.created_at).toLocaleString()}</div>
+                            </div>
+                            ${r.status === 'Pending' ? `
+                                <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                                    <button class="btn primary-btn" style="font-size: 0.76rem; padding: 0.35rem 0.65rem;" onclick="approveRequestWithWindow('${r.request_id}', 120)">
+                                        <i class="fa-solid fa-bolt"></i> Approve 2h Window
+                                    </button>
+                                    <button class="btn secondary-btn" style="font-size: 0.76rem; padding: 0.35rem 0.65rem;" onclick="approveRequestWithWindow('${r.request_id}', 1440)">
+                                        Approve 24h
+                                    </button>
+                                    <button class="btn danger-btn" style="font-size: 0.76rem; padding: 0.35rem 0.65rem;" onclick="rejectAccessRequest('${r.request_id}')">
+                                        Reject
+                                    </button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    } else if (tabName === 'points') {
+        const pointsList = data.points || [];
+        container.innerHTML = `
+            <div class="table-card" style="padding: 1.5rem;">
+                <h4 style="font-weight: 700; margin-bottom: 1rem;"><i class="fa-solid fa-coins"></i> Points Overview (${pointsList.length} updates recorded)</h4>
+                <div class="table-responsive" style="max-height: 500px;">
+                    <table class="modern-table">
+                        <thead>
+                            <tr><th>Account ID</th><th>Points</th><th>Date / Reason</th><th>Recorded At</th></tr>
+                        </thead>
+                        <tbody>
+                            ${pointsList.length === 0 ? '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No points records found.</td></tr>' :
+                            pointsList.slice(0, 50).map(p => `
+                                <tr>
+                                    <td>Account #${p.user_id}</td>
+                                    <td style="color: var(--secondary-color); font-weight: 700;">${Number(p.points).toLocaleString()}</td>
+                                    <td class="text-secondary">${escapeHtml(p.date || '-')}</td>
+                                    <td class="text-muted" style="font-size: 0.8rem;">${p.updated_at ? new Date(p.updated_at).toLocaleString() : '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    } else if (tabName === 'redemption') {
+        const redList = data.redemptions || [];
+        container.innerHTML = `
+            <div class="table-card" style="padding: 1.5rem;">
+                <h4 style="font-weight: 700; margin-bottom: 1rem;"><i class="fa-solid fa-gift"></i> Confirmed Redemptions (${redList.length})</h4>
+                <div class="table-responsive" style="max-height: 500px;">
+                    <table class="modern-table">
+                        <thead>
+                            <tr><th>Account ID</th><th>Reward Item</th><th>Points Spent</th><th>Redeemed At</th></tr>
+                        </thead>
+                        <tbody>
+                            ${redList.length === 0 ? '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No redemptions recorded for this user.</td></tr>' :
+                            redList.map(r => `
+                                <tr>
+                                    <td>Account #${r.user_id}</td>
+                                    <td><strong>${escapeHtml(r.reward_name || 'Reward')}</strong></td>
+                                    <td style="color: var(--warning-color); font-weight: 600;">${Number(r.points_spent || 0).toLocaleString()} pts</td>
+                                    <td class="text-muted" style="font-size: 0.8rem;">${r.redeemed_at ? new Date(r.redeemed_at).toLocaleString() : '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         `;
     } else if (tabName === 'settings') {
@@ -1195,6 +1437,40 @@ async function saveUserPermissions(userId) {
         }
     } catch (e) {
         showToast('Error', 'Save failed', 'danger');
+    }
+}
+
+async function scheduleDossierWindow(userId, minutes) {
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/schedule-window`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ durationMinutes: minutes, permittedActions: ['update_points', 'edit_accounts'] })
+        });
+        if (res.ok) {
+            showToast('Window Granted', `Granted ${Math.round(minutes / 60)} hour temporary access window.`);
+            openUserDetails(userId);
+        } else {
+            showToast('Error', 'Failed to schedule window', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Schedule failed', 'danger');
+    }
+}
+
+async function revokeDossierUserWindow(userId) {
+    if (!confirm('Immediately revoke write access and lock user to Read-Only mode?')) return;
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/revoke-window`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (res.ok) {
+            showToast('Access Locked', 'User returned to Read-Only mode.');
+            openUserDetails(userId);
+        }
+    } catch (e) {
+        showToast('Error', 'Revoke failed', 'danger');
     }
 }
 
@@ -1857,6 +2133,40 @@ async function saveAdminEditingPeriodConfig() {
     }
 }
 
+async function scheduleDossierWindow(userId, minutes) {
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/schedule-window`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ durationMinutes: minutes, permittedActions: ['update_points', 'edit_accounts'] })
+        });
+        if (res.ok) {
+            showToast('Window Granted', `Granted ${Math.round(minutes / 60)} hour temporary access window.`);
+            openUserDetails(userId);
+        } else {
+            showToast('Error', 'Failed to schedule window', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Schedule failed', 'danger');
+    }
+}
+
+async function revokeDossierUserWindow(userId) {
+    if (!confirm('Immediately revoke write access and lock user to Read-Only mode?')) return;
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/revoke-window`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (res.ok) {
+            showToast('Access Locked', 'User returned to Read-Only mode.');
+            openUserDetails(userId);
+        }
+    } catch (e) {
+        showToast('Error', 'Revoke failed', 'danger');
+    }
+}
+
 // 4. Drag & Drop Old / New Classification Board
 async function loadClassificationBoard() {
     try {
@@ -1920,6 +2230,442 @@ window.handleDrop = async function(event, targetClassification) {
         showToast('Error', 'Failed to move account', 'danger');
     }
 };
+
+// -----------------------------------------------------------------------------
+// 4B. POINTS MANAGEMENT & ACCESS PERMISSIONS (ADMIN)
+// -----------------------------------------------------------------------------
+async function loadAdminPointsPerms() {
+    try {
+        const [usersRes, reqRes] = await Promise.all([
+            fetch('/api/admin/users', { headers: { 'Authorization': `Bearer ${currentToken}` } }),
+            fetch('/api/requests/all', { headers: { 'Authorization': `Bearer ${currentToken}` } })
+        ]);
+
+        if (!usersRes.ok) return;
+        const users = await usersRes.json();
+        const nonAdminUsers = users.filter(u => u.status === 'approved');
+        window._adminPointsUsers = nonAdminUsers;
+
+        // 1. Populate Target User Select in Scheduler
+        const select = document.getElementById('sched-target-user');
+        if (select) {
+            const currentSelected = select.value;
+            select.innerHTML = nonAdminUsers.map(u => 
+                `<option value="${u.id}">${escapeHtml(u.displayName || u.name || u.email)} (${escapeHtml(u.email)}) [${u.accountsCount} accounts]</option>`
+            ).join('');
+            if (currentSelected && nonAdminUsers.some(u => String(u.id) === String(currentSelected))) {
+                select.value = currentSelected;
+            } else if (nonAdminUsers.length > 0) {
+                const laptop = nonAdminUsers.find(u => u.email.toLowerCase() === 'laptopmew1@gmail.com');
+                select.value = laptop ? laptop.id : nonAdminUsers[0].id;
+            }
+        }
+
+        // 2. Load and render user permission cards with 1-click toggles
+        await renderAdminUserQuickToggles(nonAdminUsers);
+
+        // 3. Update scheduler status for selected user
+        await onScheduleTargetUserChange();
+
+        // 4. Render pending requests
+        if (reqRes.ok) {
+            const requests = await reqRes.json();
+            renderAdminAccessRequests(requests);
+        }
+
+    } catch (e) {
+        console.error('Failed to load points & access permissions:', e);
+    }
+}
+
+async function renderAdminUserQuickToggles(users) {
+    const container = document.getElementById('admin-user-quick-toggles-container');
+    if (!container) return;
+
+    if (!users || users.length === 0) {
+        container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem;">No approved operator users found.</div>`;
+        return;
+    }
+
+    const detailsPromises = users.map(u => 
+        fetch(`/api/admin/users/${u.id}`, { headers: { 'Authorization': `Bearer ${currentToken}` } })
+            .then(r => r.ok ? r.json() : null)
+            .catch(() => null)
+    );
+    const detailsList = await Promise.all(detailsPromises);
+
+    container.innerHTML = users.map((u, idx) => {
+        const details = detailsList[idx];
+        const perms = details?.permissions?.map(p => p.permission_key) || [];
+        const hasPoints = perms.includes('update_points');
+        const hasEdit = perms.includes('edit_accounts');
+        const hasAdd = perms.includes('add_accounts');
+        const hasImport = perms.includes('import_excel');
+
+        const now = new Date();
+        const activeWin = details?.tempWindows?.find(w => w.is_active && new Date(w.start_time) <= now && new Date(w.end_time) >= now);
+        const isReadOnly = !hasPoints && !hasEdit && !hasAdd && !activeWin;
+
+        return `
+            <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; padding: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <div>
+                        <div style="font-weight: 700; font-size: 1rem; color: #fff;">${escapeHtml(u.displayName || u.name)}</div>
+                        <div class="text-secondary" style="font-size: 0.82rem;">${escapeHtml(u.email)} · ${u.accountsCount} Accounts Assigned</div>
+                    </div>
+                    <div>
+                        ${activeWin ? `
+                            <span class="badge badge-active" title="Expires at ${new Date(activeWin.end_time).toLocaleTimeString()}">
+                                🟢 Write Window Active
+                            </span>
+                        ` : (isReadOnly ? `
+                            <span class="badge badge-pending">🔒 Read-Only Mode</span>
+                        ` : `
+                            <span class="badge badge-active">✏️ Write Enabled</span>
+                        `)}
+                    </div>
+                </div>
+
+                <!-- 4 TOGGLE SWITCHES -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem;">
+                    <!-- TOGGLE 1: POINTS EDITING -->
+                    <div style="background: rgba(15, 23, 42, 0.5); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.4rem;">Points Updating</div>
+                        <button class="btn ${hasPoints ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasPoints ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${u.id}, 'update_points', ${!hasPoints})">
+                            <i class="fa-solid fa-${hasPoints ? 'check' : 'lock'}"></i> ${hasPoints ? 'Write Allowed ✏️' : 'Read-Only 🔒'}
+                        </button>
+                    </div>
+
+                    <!-- TOGGLE 2: ACCOUNT EDITING -->
+                    <div style="background: rgba(15, 23, 42, 0.5); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.4rem;">Account Info Editing</div>
+                        <button class="btn ${hasEdit ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasEdit ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${u.id}, 'edit_accounts', ${!hasEdit})">
+                            <i class="fa-solid fa-${hasEdit ? 'check' : 'lock'}"></i> ${hasEdit ? 'Write Allowed ✏️' : 'Read-Only 🔒'}
+                        </button>
+                    </div>
+
+                    <!-- TOGGLE 3: ADD ACCOUNTS -->
+                    <div style="background: rgba(15, 23, 42, 0.5); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.4rem;">Add Accounts</div>
+                        <button class="btn ${hasAdd ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasAdd ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${u.id}, 'add_accounts', ${!hasAdd})">
+                            <i class="fa-solid fa-${hasAdd ? 'plus' : 'ban'}"></i> ${hasAdd ? 'Allowed ➕' : 'Blocked 🔒'}
+                        </button>
+                    </div>
+
+                    <!-- TOGGLE 4: IMPORT EXCEL -->
+                    <div style="background: rgba(15, 23, 42, 0.5); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.4rem;">Excel Upload</div>
+                        <button class="btn ${hasImport ? 'primary-btn' : 'secondary-btn'}" 
+                                style="width: 100%; font-size: 0.78rem; padding: 0.35rem 0.6rem; justify-content: center; ${hasImport ? 'background: #10b981; border-color: #10b981; color: #fff;' : 'background: rgba(100, 116, 139, 0.2); color: #94a3b8;'}"
+                                onclick="quickToggleUserPerm(${u.id}, 'import_excel', ${!hasImport})">
+                            <i class="fa-solid fa-${hasImport ? 'file-excel' : 'ban'}"></i> ${hasImport ? 'Allowed 📥' : 'Blocked 🔒'}
+                        </button>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem;">
+                    <button class="btn secondary-btn" style="padding: 0.3rem 0.6rem; font-size: 0.76rem;" onclick="setSchedulerUser(${u.id})">
+                        <i class="fa-solid fa-clock"></i> Schedule Window
+                    </button>
+                    <button class="btn secondary-btn" style="padding: 0.3rem 0.6rem; font-size: 0.76rem;" onclick="openUserDetails(${u.id})">
+                        <i class="fa-solid fa-address-card"></i> Open Dossier
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function setSchedulerUser(userId) {
+    const select = document.getElementById('sched-target-user');
+    if (select) {
+        select.value = userId;
+        onScheduleTargetUserChange();
+        select.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+async function onScheduleTargetUserChange() {
+    const select = document.getElementById('sched-target-user');
+    if (!select || !select.value) return;
+    const userId = select.value;
+
+    try {
+        const res = await fetch(`/api/admin/users/${userId}`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const badge = document.getElementById('sched-current-status-badge');
+        const timer = document.getElementById('sched-active-window-timer');
+
+        const now = new Date();
+        const activeWin = data.tempWindows?.find(w => w.is_active && new Date(w.start_time) <= now && new Date(w.end_time) >= now);
+
+        if (activeWin) {
+            const end = new Date(activeWin.end_time);
+            const remainingMs = Math.max(0, end.getTime() - now.getTime());
+            const hours = Math.floor(remainingMs / (3600 * 1000));
+            const mins = Math.floor((remainingMs % (3600 * 1000)) / 60000);
+            const timeStr = hours > 0 ? `${hours}h ${mins}m remaining` : `${mins}m remaining`;
+
+            if (badge) {
+                badge.className = 'badge badge-active';
+                badge.textContent = 'Write Window Active';
+            }
+            if (timer) {
+                timer.innerHTML = `🟢 <strong>Temporary Window Active:</strong> ${timeStr} (Expires at ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+            }
+        } else {
+            const perms = data.permissions?.map(p => p.permission_key) || [];
+            const hasWrite = perms.includes('update_points') || perms.includes('edit_accounts');
+            if (badge) {
+                badge.className = hasWrite ? 'badge badge-active' : 'badge badge-pending';
+                badge.textContent = hasWrite ? 'Write Allowed' : 'Read-Only Mode';
+            }
+            if (timer) {
+                timer.textContent = hasWrite 
+                    ? 'Write access is currently granted via permanent permission toggle.' 
+                    : 'No active temporary window. User is strictly in Read-Only mode.';
+            }
+        }
+    } catch (e) {}
+}
+
+function selectScheduleDuration(mins, btnElement) {
+    document.querySelectorAll('.sched-preset-btn').forEach(b => {
+        b.style.background = '';
+        b.style.color = '';
+        b.classList.remove('active');
+    });
+
+    if (btnElement) {
+        btnElement.classList.add('active');
+        btnElement.style.background = 'var(--primary-color)';
+        btnElement.style.color = '#fff';
+    }
+
+    const customContainer = document.getElementById('sched-custom-time-container');
+    const hiddenInput = document.getElementById('sched-duration-minutes');
+
+    if (mins === 'custom') {
+        if (customContainer) customContainer.style.display = 'block';
+        if (hiddenInput) hiddenInput.value = 'custom';
+    } else {
+        if (customContainer) customContainer.style.display = 'none';
+        if (hiddenInput) hiddenInput.value = mins;
+    }
+}
+
+async function submitScheduleWindow() {
+    const select = document.getElementById('sched-target-user');
+    const userId = select?.value;
+    if (!userId) {
+        showToast('Error', 'Please select a target user', 'danger');
+        return;
+    }
+
+    const durationVal = document.getElementById('sched-duration-minutes')?.value || '60';
+    let durationMinutes = 60;
+    let customEndTime = null;
+
+    if (durationVal === 'custom') {
+        const customInput = document.getElementById('sched-custom-endtime');
+        if (!customInput || !customInput.value) {
+            showToast('Error', 'Please choose a custom end date and time', 'danger');
+            return;
+        }
+        customEndTime = new Date(customInput.value).toISOString();
+    } else {
+        durationMinutes = parseInt(durationVal) || 60;
+    }
+
+    const permittedActions = [];
+    if (document.getElementById('sched-action-points')?.checked) permittedActions.push('update_points');
+    if (document.getElementById('sched-action-edit')?.checked) permittedActions.push('edit_accounts');
+    if (document.getElementById('sched-action-add')?.checked) {
+        permittedActions.push('add_accounts');
+        permittedActions.push('import_excel');
+    }
+
+    if (permittedActions.length === 0) {
+        showToast('Error', 'Please check at least one permitted action', 'danger');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/schedule-window`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ durationMinutes, permittedActions, customEndTime })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Window Scheduled', `Granted temporary window until ${new Date(data.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+            loadAdminPointsPerms();
+        } else {
+            showToast('Failed', data.error || 'Failed to schedule window', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Network error scheduling window', 'danger');
+    }
+}
+
+async function submitRevokeWindow() {
+    const select = document.getElementById('sched-target-user');
+    const userId = select?.value;
+    if (!userId) return;
+
+    if (!confirm('Are you sure you want to lock this user to Read-Only mode immediately? All active editing windows will be terminated.')) return;
+
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/revoke-window`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (res.ok) {
+            showToast('Access Locked', 'User access has been locked to Read-Only mode.');
+            loadAdminPointsPerms();
+        } else {
+            showToast('Error', 'Failed to revoke window', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Failed to revoke window', 'danger');
+    }
+}
+
+async function quickToggleUserPerm(userId, permKey, enable) {
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/quick-toggle-perm`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ permissionKey: permKey, enable: Boolean(enable) })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            const labelMap = {
+                'update_points': 'Points Updating',
+                'edit_accounts': 'Account Editing',
+                'add_accounts': 'Add Accounts',
+                'import_excel': 'Excel Upload'
+            };
+            const label = labelMap[permKey] || permKey;
+            showToast('Permission Updated', `${label} set to ${enable ? 'Write Allowed ✏️' : 'Read-Only 🔒'}`);
+            loadAdminPointsPerms();
+            if (window._activeUserDetails && window._activeUserDetails.user.id === userId) {
+                openUserDetails(userId);
+            }
+        } else {
+            showToast('Error', data.error || 'Failed to toggle permission', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Toggle failed', 'danger');
+    }
+}
+
+function renderAdminAccessRequests(requests) {
+    const container = document.getElementById('admin-access-requests-list');
+    const countBadge = document.getElementById('admin-pending-req-count');
+    if (!container) return;
+
+    const pendingRequests = requests.filter(r => r.status === 'Pending');
+    if (countBadge) countBadge.textContent = `${pendingRequests.length} Pending`;
+
+    if (pendingRequests.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                <i class="fa-solid fa-circle-check" style="color: var(--success-color); font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
+                No pending access or correction requests.
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = pendingRequests.map(r => `
+        <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div style="flex: 1; min-width: 250px;">
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.35rem;">
+                    <span class="badge badge-primary">${r.request_id}</span>
+                    <span class="badge badge-pending">${(r.category || 'Request').replace('_', ' ').toUpperCase()}</span>
+                    <span style="font-size: 0.82rem; font-weight: 700; color: #fff;">${escapeHtml(r.subject)}</span>
+                </div>
+                <div class="text-secondary" style="font-size: 0.85rem; margin-bottom: 0.35rem;">${escapeHtml(r.message)}</div>
+                <div class="text-muted" style="font-size: 0.76rem;">
+                    By <strong>${escapeHtml(r.user_name || 'Operator')}</strong> (${escapeHtml(r.user_email)}) · ${new Date(r.created_at).toLocaleString()}
+                </div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <button class="btn secondary-btn" style="font-size: 0.78rem; padding: 0.4rem 0.75rem; background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);"
+                        onclick="approveRequestWithWindow('${r.request_id}', 60)">
+                    <i class="fa-solid fa-bolt"></i> Approve 1h Window
+                </button>
+                <button class="btn primary-btn" style="font-size: 0.78rem; padding: 0.4rem 0.75rem;"
+                        onclick="approveRequestWithWindow('${r.request_id}', 120)">
+                    <i class="fa-solid fa-bolt"></i> Approve 2h Window
+                </button>
+                <button class="btn secondary-btn" style="font-size: 0.78rem; padding: 0.4rem 0.75rem;"
+                        onclick="approveRequestWithWindow('${r.request_id}', 1440)">
+                    <i class="fa-solid fa-clock"></i> Approve 24h
+                </button>
+                <button class="btn danger-btn" style="font-size: 0.78rem; padding: 0.4rem 0.75rem;"
+                        onclick="rejectAccessRequest('${r.request_id}')">
+                    <i class="fa-solid fa-xmark"></i> Reject
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function approveRequestWithWindow(requestId, minutes) {
+    try {
+        const res = await fetch(`/api/requests/${requestId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({
+                status: 'Approved',
+                grantWindowMinutes: minutes,
+                adminResponse: `Approved by administrator with a ${Math.round(minutes / 60)} hour temporary access window.`
+            })
+        });
+        if (res.ok) {
+            showToast('Request Approved', `Granted ${Math.round(minutes / 60)}h access window to operator.`);
+            loadAdminPointsPerms();
+        } else {
+            showToast('Error', 'Failed to approve request', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Approval failed', 'danger');
+    }
+}
+
+async function rejectAccessRequest(requestId) {
+    const reason = prompt('Reason for rejection (optional):', 'Request denied by administrator.');
+    if (reason === null) return;
+
+    try {
+        const res = await fetch(`/api/requests/${requestId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({
+                status: 'Rejected',
+                adminResponse: reason
+            })
+        });
+        if (res.ok) {
+            showToast('Request Rejected', 'The request has been rejected.');
+            loadAdminPointsPerms();
+        }
+    } catch (e) {
+        showToast('Error', 'Rejection failed', 'danger');
+    }
+}
 
 // 5. Reward Catalogue (Admin)
 async function loadAdminRewardCatalog() {
@@ -2001,6 +2747,40 @@ async function saveRewardCatalogItem() {
         }
     } catch (e) {
         showToast('Error', 'Save failed', 'danger');
+    }
+}
+
+async function scheduleDossierWindow(userId, minutes) {
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/schedule-window`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ durationMinutes: minutes, permittedActions: ['update_points', 'edit_accounts'] })
+        });
+        if (res.ok) {
+            showToast('Window Granted', `Granted ${Math.round(minutes / 60)} hour temporary access window.`);
+            openUserDetails(userId);
+        } else {
+            showToast('Error', 'Failed to schedule window', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Schedule failed', 'danger');
+    }
+}
+
+async function revokeDossierUserWindow(userId) {
+    if (!confirm('Immediately revoke write access and lock user to Read-Only mode?')) return;
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/revoke-window`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (res.ok) {
+            showToast('Access Locked', 'User returned to Read-Only mode.');
+            openUserDetails(userId);
+        }
+    } catch (e) {
+        showToast('Error', 'Revoke failed', 'danger');
     }
 }
 
@@ -2523,10 +3303,22 @@ async function loadUserEditingStatus() {
         if (btnExcel) {
             if (!status.canImportExcel) {
                 btnExcel.classList.add('opacity-75');
-                btnExcel.title = 'Free editing period has ended. Submit an Account Request to import accounts.';
+                btnExcel.title = 'Account addition & spreadsheet import is locked. Submit a request to import accounts.';
             } else {
                 btnExcel.classList.remove('opacity-75');
                 btnExcel.title = '';
+            }
+        }
+
+        const btnPts = document.getElementById('btn-user-update-points');
+        if (btnPts) {
+            if (status.isReadOnly || !status.canUpdatePoints) {
+                btnPts.innerHTML = `<i class="fa-solid fa-lock"></i> Request Points Window`;
+                btnPts.className = 'btn secondary-btn';
+                btnPts.onclick = () => openRequestPointsModal();
+            } else {
+                btnPts.innerHTML = `<i class="fa-solid fa-bolt"></i> Points Update Active`;
+                btnPts.className = 'btn primary-btn';
             }
         }
     } catch (e) {
@@ -2537,11 +3329,11 @@ async function loadUserEditingStatus() {
 function handleUserAddAccount() {
     const status = window._userEditingStatus;
     if (status && !status.canAddAccounts) {
-        if (confirm('Your free editing period has ended. Account creations must be requested from the Administrator.\n\nWould you like to submit an Account Request now?')) {
+        if (confirm('Account addition is currently locked in Read-Only mode.\n\nWould you like to submit an access request to the Administrator now?')) {
             openCreateUserRequestModal();
             document.getElementById('req-category').value = 'account_correction';
             document.getElementById('req-subject').value = 'Request Permission to Add Accounts';
-            document.getElementById('req-message').value = 'My free editing period has expired. Please grant access to register new accounts.';
+            document.getElementById('req-message').value = 'My account is currently in Read-Only mode. Please grant a temporary window to register new accounts.';
         }
         return;
     }
@@ -2551,11 +3343,11 @@ function handleUserAddAccount() {
 function handleUserUploadExcel() {
     const status = window._userEditingStatus;
     if (status && !status.canImportExcel) {
-        if (confirm('Your free editing period has ended. Excel spreadsheet uploads must be requested from the Administrator.\n\nWould you like to submit an Account Request now?')) {
+        if (confirm('Spreadsheet import is currently locked in Read-Only mode.\n\nWould you like to submit an access request to the Administrator now?')) {
             openCreateUserRequestModal();
             document.getElementById('req-category').value = 'account_correction';
             document.getElementById('req-subject').value = 'Request Permission for Excel Import';
-            document.getElementById('req-message').value = 'My free editing period has expired. Please grant access to import accounts via spreadsheet.';
+            document.getElementById('req-message').value = 'My account is currently in Read-Only mode. Please grant permission to import accounts via spreadsheet.';
         }
         return;
     }
@@ -2883,9 +3675,31 @@ async function sendContactAdminMessage() {
     }
 }
 
+function openRequestPointsModal(accId, email) {
+    openCreateUserRequestModal();
+    const catSelect = document.getElementById('req-category');
+    if (catSelect) catSelect.value = 'points_update';
+    const subjInput = document.getElementById('req-subject');
+    if (subjInput) subjInput.value = email ? `Request Points Update Window (${email})` : 'Request Points Update Window';
+    const msgInput = document.getElementById('req-message');
+    if (msgInput) msgInput.value = email 
+        ? `Requesting temporary write permission from administrator to update points for account: ${email} (Account ID: ${accId || '-'}).`
+        : 'Requesting a temporary access window from administrator to update points on assigned accounts.';
+}
+
 function openPointsUpdateModal(accId, email, currentPts) {
+    if (currentUser.role !== 'admin') {
+        const canUpdate = (currentUser.permissions && currentUser.permissions.includes('update_points')) || 
+                          (window._userEditingStatus && window._userEditingStatus.canUpdatePoints);
+        if (!canUpdate) {
+            if (confirm(`Points updating is currently locked in Read-Only mode.\n\nWould you like to request a temporary editing window from the Administrator now to update points for ${email}?`)) {
+                openRequestPointsModal(accId, email);
+            }
+            return;
+        }
+    }
     document.getElementById('pu-account-id').value = accId;
-    document.getElementById('pu-account-info').textContent = `Updating points for: ${email} (Current: ${currentPts} pts)`;
+    document.getElementById('pu-account-info').textContent = `Updating points for: ${email} (Current: ${Number(currentPts).toLocaleString()} pts)`;
     document.getElementById('pu-points').value = currentPts;
     openModal('modal-points-update');
 }
@@ -2904,11 +3718,18 @@ async function submitPointsUpdate() {
         const data = await res.json();
         if (res.ok) {
             closeModal('modal-points-update');
-            showToast('Points Updated', `Account points updated to ${data.newPoints.toLocaleString()} pts.`);
+            showToast('Points Updated', `Account points updated to ${Number(data.newPoints).toLocaleString()} pts.`);
             if (currentUser.role === 'admin') loadAllAccounts();
-            else loadUserAccounts();
+            else {
+                loadUserAccounts();
+                loadUserEditingStatus();
+            }
         } else {
             showToast('Denied', data.error || 'You do not have permission to update points. Submit a permission request.', 'danger');
+            if (data.code === 'READ_ONLY' && confirm(`${data.error}\n\nWould you like to submit an access request to the Administrator now?`)) {
+                closeModal('modal-points-update');
+                openRequestPointsModal(accId);
+            }
         }
     } catch (e) {
         showToast('Error', 'Update failed', 'danger');
