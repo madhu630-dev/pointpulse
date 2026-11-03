@@ -30,8 +30,12 @@ const getAccounts = async (req, res) => {
         const metaMap = new Map();
         metaRows.forEach(m => metaMap.set(m.account_id, m));
 
-        const adminUserRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
+        const adminUserRow = await get(`SELECT id, name, email FROM app_users WHERE role = 'admin' LIMIT 1`);
         const defaultAdminId = adminUserRow ? adminUserRow.id : 1;
+
+        const allUsers = await all(`SELECT id, name, email, display_name, role FROM app_users`);
+        const userMap = new Map();
+        allUsers.forEach(u => userMap.set(u.id, u));
 
         const accountIds = accounts.map(a => a.id);
 
@@ -91,6 +95,7 @@ const getAccounts = async (req, res) => {
             const meta = metaMap.get(acc.id);
             // Strictly assign unmapped legacy accounts to the Administrator, NEVER to non-admin users
             const assignedUserId = meta ? meta.user_id : defaultAdminId;
+            const ownerObj = userMap.get(assignedUserId) || adminUserRow || { id: defaultAdminId, name: 'Sole Administrator', email: ADMIN_EMAIL, role: 'admin' };
             let classification = meta ? meta.classification : null;
             if (!classification) {
                 classification = accRedemptions.length > 0 ? 'old' : 'new';
@@ -110,6 +115,10 @@ const getAccounts = async (req, res) => {
                 is_pinned: acc.is_pinned || false,
                 alternative_email: acc.alternative_email || '',
                 user_id: assignedUserId,
+                owner_id: assignedUserId,
+                owner_name: ownerObj.display_name || ownerObj.name || 'Administrator',
+                owner_email: ownerObj.email || ADMIN_EMAIL,
+                owner_role: ownerObj.role || 'admin',
                 total_redemptions: accRedemptions.length,
                 redemptions: accRedemptions,
                 points_history: history
@@ -432,6 +441,24 @@ const updateAccount = async (req, res) => {
                 `INSERT INTO account_activity_logs (account_id, actor_id, actor_name, actor_role, action_type, description, previous_data, new_data)
                  VALUES (?, ?, ?, 'admin', 'classification_changed', ?, ?, ?)`,
                 [accountId, user.id, user.name, `Classification changed to ${classification}`, meta ? meta.classification : 'new', classification]
+            );
+        }
+
+        // Admin can reassign account to a different user
+        const targetUserId = req.body.user_id !== undefined ? req.body.user_id : req.body.userId;
+        if (user.role === 'admin' && targetUserId !== undefined && parseInt(targetUserId) !== ownerId) {
+            const finalOwnerId = parseInt(targetUserId);
+            const targetUser = await get(`SELECT id, name, email FROM app_users WHERE id = ?`, [finalOwnerId]);
+            await run(
+                `INSERT INTO account_metadata (account_id, user_id, classification, updated_at)
+                 VALUES (?, ?, ?, datetime('now'))
+                 ON CONFLICT(account_id) DO UPDATE SET user_id = excluded.user_id, updated_at = datetime('now')`,
+                [accountId, finalOwnerId, classification || (meta ? meta.classification : 'new')]
+            );
+            await run(
+                `INSERT INTO account_activity_logs (account_id, actor_id, actor_name, actor_role, action_type, description, previous_data, new_data)
+                 VALUES (?, ?, ?, 'admin', 'owner_reassigned', ?, ?, ?)`,
+                [accountId, user.id, user.name, `Account reassigned to ${targetUser ? targetUser.name : 'User #' + finalOwnerId}`, String(ownerId), String(finalOwnerId)]
             );
         }
 

@@ -524,6 +524,9 @@
                                     <option value="old">Old Accounts</option>
                                     <option value="new">New Accounts</option>
                                 </select>
+                                <select id="all-acc-owner-filter" class="form-input" style="width: 180px;" onchange="filterAllAccountsTable()">
+                                    <option value="all">All Operators / Owners</option>
+                                </select>
                             </div>
                             <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
                                 <button class="btn secondary-btn" onclick="openAdminEditingPeriodModal()"><i class="fa-solid fa-user-clock"></i> Free Editing Periods</button>
@@ -537,6 +540,7 @@
                                     <tr>
                                         <th>Prof #</th>
                                         <th>Account Identifier</th>
+                                        <th>Assigned Operator</th>
                                         <th>Server</th>
                                         <th>Current Points</th>
                                         <th>Classification</th>
@@ -1142,6 +1146,10 @@
                 <div class="form-group">
                     <label>Initial Points</label>
                     <input type="number" id="acc-initial-points" class="form-input" value="0">
+                </div>
+                <div class="form-group" id="acc-owner-container">
+                    <label>Assigned Operator / Owner</label>
+                    <select id="acc-owner-id" class="form-input"></select>
                 </div>
                 <div class="form-group">
                     <label>Notes</label>

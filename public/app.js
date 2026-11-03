@@ -1096,16 +1096,33 @@ async function saveUserPermissions(userId) {
 // 3. Admin All Accounts & Detailed Account Governance
 async function loadAllAccounts() {
     try {
-        const res = await fetch('/api/accounts', {
-            headers: { 'Authorization': `Bearer ${currentToken}` }
-        });
-        if (!res.ok) return;
-        const accounts = await res.json();
+        const [accRes, usersRes] = await Promise.all([
+            fetch('/api/accounts', { headers: { 'Authorization': `Bearer ${currentToken}` } }),
+            fetch('/api/admin/users', { headers: { 'Authorization': `Bearer ${currentToken}` } })
+        ]);
+        if (!accRes.ok) return;
+        const accounts = await accRes.json();
         window._allAccounts = accounts;
+
+        if (usersRes.ok) {
+            const users = await usersRes.json();
+            window._allPlatformUsers = users;
+            populateAdminOwnerFilter(users);
+        }
+
         filterAllAccountsTable();
     } catch (e) {
         console.error('Failed to load all accounts:', e);
     }
+}
+
+function populateAdminOwnerFilter(users) {
+    const filter = document.getElementById('all-acc-owner-filter');
+    if (!filter) return;
+    const currentVal = filter.value;
+    filter.innerHTML = `<option value="all">All Operators / Owners</option>` +
+        users.map(u => `<option value="${u.id}">${escapeHtml(u.displayName || u.name || u.email)} (${escapeHtml(u.email)})</option>`).join('');
+    if (currentVal) filter.value = currentVal;
 }
 
 function filterAllAccountsTable() {
@@ -1113,19 +1130,21 @@ function filterAllAccountsTable() {
     const search = document.getElementById('all-acc-search')?.value.toLowerCase() || '';
     const statusFilter = document.getElementById('all-acc-status-filter')?.value || 'all';
     const classFilter = document.getElementById('all-acc-class-filter')?.value || 'all';
+    const ownerFilter = document.getElementById('all-acc-owner-filter')?.value || 'all';
 
     const filtered = accounts.filter(a => {
         const matchSearch = a.email.toLowerCase().includes(search) || (a.profile_no && String(a.profile_no).includes(search));
         const matchStatus = statusFilter === 'all' || a.status === statusFilter;
         const matchClass = classFilter === 'all' || a.classification === classFilter;
-        return matchSearch && matchStatus && matchClass;
+        const matchOwner = ownerFilter === 'all' || String(a.user_id) === ownerFilter;
+        return matchSearch && matchStatus && matchClass && matchOwner;
     });
 
     const body = document.getElementById('all-accounts-table-body');
     if (!body) return;
 
     if (filtered.length === 0) {
-        body.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">No accounts found matching criteria.</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">No accounts found matching criteria.</td></tr>';
         return;
     }
 
@@ -1135,6 +1154,12 @@ function filterAllAccountsTable() {
             <td>
                 <div style="font-weight: 600; color: #fff;">${escapeHtml(a.email)}</div>
                 ${a.recovery_email ? `<div class="text-secondary" style="font-size: 0.78rem;">Alt: ${escapeHtml(a.recovery_email)}</div>` : ''}
+            </td>
+            <td>
+                <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #c7d2fe; border: 1px solid rgba(99, 102, 241, 0.3); font-size: 0.76rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+                    <i class="fa-solid fa-user${a.owner_role === 'admin' ? '-shield' : ''}"></i> ${escapeHtml(a.owner_name || 'Administrator')}
+                </span>
+                <div class="text-secondary" style="font-size: 0.72rem; margin-top: 3px;">${escapeHtml(a.owner_email || '')}</div>
             </td>
             <td class="text-secondary">${a.server || '-'}</td>
             <td style="color: var(--secondary-color); font-weight: 700;">${a.current_points.toLocaleString()}</td>
@@ -1286,6 +1311,41 @@ function closeAccountDetailsPage() {
 // -----------------------------------------------------------------------------
 // ACCOUNT CREATION & EDITING MODAL
 // -----------------------------------------------------------------------------
+async function populateAccountOwnerDropdown(selectedUserId) {
+    const container = document.getElementById('acc-owner-container');
+    const select = document.getElementById('acc-owner-id');
+    if (!container || !select) return;
+
+    if (!currentUser || currentUser.role !== 'admin') {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+
+    let users = window._allPlatformUsers;
+    if (!users || users.length === 0) {
+        try {
+            const res = await fetch('/api/admin/users', { headers: { 'Authorization': `Bearer ${currentToken}` } });
+            if (res.ok) {
+                users = await res.json();
+                window._allPlatformUsers = users;
+            }
+        } catch (e) {}
+    }
+
+    const defaultAdminUser = users?.find(u => u.role === 'admin') || { id: 1, name: 'Sole Administrator', email: '001.workme@gmail.com' };
+    select.innerHTML = (users || [defaultAdminUser]).map(u => `
+        <option value="${u.id}">${escapeHtml(u.displayName || u.name)} (${escapeHtml(u.email)})${u.role === 'admin' ? ' [ADMIN]' : ''}</option>
+    `).join('');
+
+    if (selectedUserId) {
+        select.value = selectedUserId;
+    } else {
+        select.value = defaultAdminUser.id;
+    }
+}
+
 function openCreateAccountModal() {
     document.getElementById('modal-account-title').textContent = 'Add Account Profile';
     document.getElementById('acc-id').value = '';
@@ -1298,6 +1358,7 @@ function openCreateAccountModal() {
     document.getElementById('acc-initial-points').value = '0';
     document.getElementById('acc-initial-points').closest('.form-group').style.display = 'block';
     document.getElementById('acc-notes').value = '';
+    populateAccountOwnerDropdown();
     openModal('modal-account');
 }
 
@@ -1319,6 +1380,7 @@ async function openEditAccountModal(accountId) {
         document.getElementById('acc-status').value = acc.status || 'active';
         document.getElementById('acc-initial-points').closest('.form-group').style.display = 'none';
         document.getElementById('acc-notes').value = acc.notes || '';
+        populateAccountOwnerDropdown(acc.user_id || acc.owner_id);
         openModal('modal-account');
     } catch (e) {
         showToast('Error', 'Failed to load account for editing', 'danger');
@@ -1334,6 +1396,7 @@ async function saveAccountRecord() {
     const status = document.getElementById('acc-status').value;
     const initialPoints = parseInt(document.getElementById('acc-initial-points').value) || 0;
     const notes = document.getElementById('acc-notes').value.trim();
+    const ownerId = document.getElementById('acc-owner-id')?.value;
 
     if (!email) {
         showToast('Required', 'Please enter account email / identifier', 'warning');
@@ -1351,7 +1414,8 @@ async function saveAccountRecord() {
                     server,
                     classification,
                     status,
-                    notes
+                    notes,
+                    user_id: ownerId ? Number(ownerId) : undefined
                 })
             });
         } else {
@@ -1365,7 +1429,8 @@ async function saveAccountRecord() {
                     classification,
                     status,
                     currentPoints: initialPoints,
-                    notes
+                    notes,
+                    user_id: ownerId ? Number(ownerId) : undefined
                 })
             });
         }
