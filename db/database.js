@@ -560,8 +560,20 @@ async function getUserEditingPeriodStatus(userId) {
         };
     }
 
-    // 1. Check if user has an active temporary access window
+    // Fetch live user permissions (granted via quick toggles or admin panel)
     const nowIso = new Date().toISOString();
+    const activePerms = await all(
+        `SELECT permission_key FROM user_permissions 
+         WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?)`,
+        [userId, nowIso]
+    );
+    const permKeys = (activePerms || []).map(p => p.permission_key);
+    const hasPermPoints = permKeys.includes('update_points') || permKeys.includes('all');
+    const hasPermEdit = permKeys.includes('edit_accounts') || permKeys.includes('all');
+    const hasPermAdd = permKeys.includes('add_accounts') || permKeys.includes('all');
+    const hasPermImport = permKeys.includes('import_excel') || permKeys.includes('all');
+
+    // 1. Check if user has an active temporary access window
     const activeWindow = await get(
         `SELECT * FROM temporary_access_windows 
          WHERE user_id = ? AND is_active = 1 AND start_time <= ? AND end_time >= ? 
@@ -584,25 +596,49 @@ async function getUserEditingPeriodStatus(userId) {
             ? `${winRemainingHours}h ${winRemainingMins}m remaining` 
             : `${winRemainingMins}m remaining`;
 
-        const canUpdatePts = actions.includes('update_points') || actions.includes('all');
-        const canEditAcc = actions.includes('edit_accounts') || actions.includes('all');
-        const canAddAcc = actions.includes('add_accounts') || actions.includes('all');
+        const canUpdatePts = actions.includes('update_points') || actions.includes('all') || hasPermPoints;
+        const canEditAcc = actions.includes('edit_accounts') || actions.includes('all') || hasPermEdit;
+        const canAddAcc = actions.includes('add_accounts') || actions.includes('import_excel') || actions.includes('all') || hasPermAdd;
+        const canImportXls = actions.includes('import_excel') || actions.includes('add_accounts') || actions.includes('all') || hasPermImport;
 
         return {
             canAdd: canAddAcc,
+            canAddAccounts: canAddAcc,
             canEdit: canEditAcc,
+            canEditAccounts: canEditAcc,
             canUpdatePoints: canUpdatePts,
+            canImportExcel: canImportXls,
             isFreePeriodActive: true,
+            isWithinWindow: true,
             isTemporaryWindow: true,
             expiresAt: winEnd.toISOString(),
             remainingMs: winRemainingMs,
             remainingFormatted: winFormatted,
             statusText: `Temporary Window Active (${winFormatted})`,
-            permittedActions: actions
+            permittedActions: actions,
+            badgeClass: 'badge-active'
         };
     }
 
-    // 2. Check user-specific period first, fallback to global default (user_id = 0)
+    // 2. Check if user has active permissions granted directly
+    if (hasPermPoints || hasPermEdit || hasPermAdd || hasPermImport) {
+        return {
+            canAdd: hasPermAdd || hasPermImport,
+            canAddAccounts: hasPermAdd || hasPermImport,
+            canEdit: hasPermEdit,
+            canEditAccounts: hasPermEdit,
+            canUpdatePoints: hasPermPoints,
+            canImportExcel: hasPermImport || hasPermAdd,
+            isFreePeriodActive: true,
+            isWithinWindow: true,
+            isTemporaryWindow: false,
+            remainingFormatted: 'Admin Permissions Enabled',
+            statusText: 'Write Access Enabled',
+            badgeClass: 'badge-active'
+        };
+    }
+
+    // 3. Check user-specific period first, fallback to global default (user_id = 0)
     let period = await get(`SELECT * FROM user_editing_periods WHERE user_id = ?`, [userId]);
     if (!period) {
         period = await get(`SELECT * FROM user_editing_periods WHERE user_id = 0 OR user_id IS NULL`);
@@ -611,13 +647,18 @@ async function getUserEditingPeriodStatus(userId) {
     if (!period || !period.is_enabled) {
         return {
             canAdd: false,
+            canAddAccounts: false,
             canEdit: false,
+            canEditAccounts: false,
             canUpdatePoints: false,
+            canImportExcel: false,
             isFreePeriodActive: false,
             isWithinWindow: false,
+            isReadOnly: true,
             remainingFormatted: 'Read-Only (Locked)',
             statusText: 'Read-Only Mode (Request Access)',
-            message: 'Your account is in Read-Only mode. Please submit an access request to the administrator.'
+            message: 'Your account is in Read-Only mode. Please submit an access request to the administrator.',
+            badgeClass: 'badge-pending'
         };
     }
 
@@ -649,17 +690,22 @@ async function getUserEditingPeriodStatus(userId) {
 
     return {
         canAdd: isActive && Boolean(period.allow_add),
+        canAddAccounts: isActive && Boolean(period.allow_add),
         canEdit: isActive && Boolean(period.allow_edit),
+        canEditAccounts: isActive && Boolean(period.allow_edit),
         canUpdatePoints: isActive && Boolean(period.allow_edit),
+        canImportExcel: isActive && Boolean(period.allow_add),
         isFreePeriodActive: isActive,
         isWithinWindow: isActive,
+        isReadOnly: !isActive,
         expiresAt: expiresAt.toISOString(),
         remainingMs: Math.max(0, remainingMs),
         remainingFormatted: isActive ? remainingFormatted : 'Read-Only (Locked)',
         statusText: isActive ? `Editing Active (${remainingFormatted})` : 'Read-Only Mode (Request Access)',
         duration: period.duration,
         unit: period.unit,
-        startEvent: period.start_event
+        startEvent: period.start_event,
+        badgeClass: isActive ? 'badge-active' : 'badge-pending'
     };
 }
 

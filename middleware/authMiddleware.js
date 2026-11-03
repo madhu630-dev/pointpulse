@@ -94,17 +94,29 @@ const requirePermission = (permissionKey) => {
         }
 
         // Check assigned permissions or temporary access window
-        let hasPerm = (req.user.permissions && req.user.permissions.includes(permissionKey)) ||
-                      (req.user.temporary_actions && req.user.temporary_actions.includes(permissionKey));
+        let hasPerm = (req.user.permissions && (req.user.permissions.includes(permissionKey) || req.user.permissions.includes('all'))) ||
+                      (req.user.temporary_actions && (req.user.temporary_actions.includes(permissionKey) || req.user.temporary_actions.includes('all')));
 
-        // Check administrator-configured free editing period for add/edit/import
-        if (!hasPerm && (permissionKey === 'add_accounts' || permissionKey === 'edit_accounts' || permissionKey === 'import_excel')) {
+        // If permission is import_excel, also allow if user has add_accounts
+        if (!hasPerm && permissionKey === 'import_excel') {
+            hasPerm = (req.user.permissions && req.user.permissions.includes('add_accounts')) ||
+                      (req.user.temporary_actions && req.user.temporary_actions.includes('add_accounts'));
+        }
+
+        // Check administrator-configured free editing period / active window for add/edit/import/points
+        if (!hasPerm) {
             try {
                 const editStatus = await getUserEditingPeriodStatus(req.user.id);
-                if ((permissionKey === 'add_accounts' || permissionKey === 'import_excel') && editStatus.canAdd) {
-                    hasPerm = true;
-                } else if (permissionKey === 'edit_accounts' && editStatus.canEdit) {
-                    hasPerm = true;
+                if (editStatus.isTemporaryWindow || editStatus.isWithinWindow || editStatus.isFreePeriodActive) {
+                    if (permissionKey === 'import_excel' && (editStatus.canImportExcel || editStatus.canAdd || editStatus.canAddAccounts)) {
+                        hasPerm = true;
+                    } else if (permissionKey === 'add_accounts' && (editStatus.canAdd || editStatus.canAddAccounts || editStatus.canImportExcel)) {
+                        hasPerm = true;
+                    } else if (permissionKey === 'edit_accounts' && (editStatus.canEdit || editStatus.canEditAccounts)) {
+                        hasPerm = true;
+                    } else if (permissionKey === 'update_points' && editStatus.canUpdatePoints) {
+                        hasPerm = true;
+                    }
                 }
             } catch (e) {}
         }

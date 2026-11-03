@@ -1445,7 +1445,7 @@ async function scheduleDossierWindow(userId, minutes) {
         const res = await fetch(`/api/admin/users/${userId}/schedule-window`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
-            body: JSON.stringify({ durationMinutes: minutes, permittedActions: ['update_points', 'edit_accounts'] })
+            body: JSON.stringify({ durationMinutes: minutes, permittedActions: ['update_points', 'edit_accounts', 'add_accounts', 'import_excel'] })
         });
         if (res.ok) {
             showToast('Window Granted', `Granted ${Math.round(minutes / 60)} hour temporary access window.`);
@@ -2138,7 +2138,7 @@ async function scheduleDossierWindow(userId, minutes) {
         const res = await fetch(`/api/admin/users/${userId}/schedule-window`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
-            body: JSON.stringify({ durationMinutes: minutes, permittedActions: ['update_points', 'edit_accounts'] })
+            body: JSON.stringify({ durationMinutes: minutes, permittedActions: ['update_points', 'edit_accounts', 'add_accounts', 'import_excel'] })
         });
         if (res.ok) {
             showToast('Window Granted', `Granted ${Math.round(minutes / 60)} hour temporary access window.`);
@@ -2631,6 +2631,7 @@ async function approveRequestWithWindow(requestId, minutes) {
             body: JSON.stringify({
                 status: 'Approved',
                 grantWindowMinutes: minutes,
+                permittedActions: ['update_points', 'edit_accounts', 'add_accounts', 'import_excel'],
                 adminResponse: `Approved by administrator with a ${Math.round(minutes / 60)} hour temporary access window.`
             })
         });
@@ -2755,7 +2756,7 @@ async function scheduleDossierWindow(userId, minutes) {
         const res = await fetch(`/api/admin/users/${userId}/schedule-window`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
-            body: JSON.stringify({ durationMinutes: minutes, permittedActions: ['update_points', 'edit_accounts'] })
+            body: JSON.stringify({ durationMinutes: minutes, permittedActions: ['update_points', 'edit_accounts', 'add_accounts', 'import_excel'] })
         });
         if (res.ok) {
             showToast('Window Granted', `Granted ${Math.round(minutes / 60)} hour temporary access window.`);
@@ -3295,9 +3296,10 @@ async function loadUserEditingStatus() {
 
         const btnAdd = document.getElementById('btn-user-add-account');
         if (btnAdd) {
-            if (!status.canAddAccounts) {
+            const canAdd = status.canAddAccounts || status.canAdd || status.isWithinWindow || status.isTemporaryWindow;
+            if (!canAdd) {
                 btnAdd.classList.add('opacity-75');
-                btnAdd.title = 'Free editing period has ended. Submit an Account Request to add accounts.';
+                btnAdd.title = 'Account addition is locked in Read-Only mode. Submit a request to add accounts.';
             } else {
                 btnAdd.classList.remove('opacity-75');
                 btnAdd.title = '';
@@ -3306,9 +3308,10 @@ async function loadUserEditingStatus() {
 
         const btnExcel = document.getElementById('btn-user-upload-excel');
         if (btnExcel) {
-            if (!status.canImportExcel) {
+            const canImport = status.canImportExcel || status.canAddAccounts || status.canAdd || status.isWithinWindow || status.isTemporaryWindow;
+            if (!canImport) {
                 btnExcel.classList.add('opacity-75');
-                btnExcel.title = 'Account addition & spreadsheet import is locked. Submit a request to import accounts.';
+                btnExcel.title = 'Spreadsheet import is locked in Read-Only mode. Submit a request to import accounts.';
             } else {
                 btnExcel.classList.remove('opacity-75');
                 btnExcel.title = '';
@@ -3333,7 +3336,8 @@ async function loadUserEditingStatus() {
 
 function handleUserAddAccount() {
     const status = window._userEditingStatus;
-    if (status && !status.canAddAccounts) {
+    const canAdd = !status || status.canAddAccounts || status.canAdd || status.isWithinWindow || status.isTemporaryWindow;
+    if (!canAdd && status && status.isReadOnly) {
         if (confirm('Account addition is currently locked in Read-Only mode.\n\nWould you like to submit an access request to the Administrator now?')) {
             openCreateUserRequestModal();
             document.getElementById('req-category').value = 'account_correction';
@@ -3347,7 +3351,8 @@ function handleUserAddAccount() {
 
 function handleUserUploadExcel() {
     const status = window._userEditingStatus;
-    if (status && !status.canImportExcel) {
+    const canImport = !status || status.canImportExcel || status.canAddAccounts || status.canAdd || status.isWithinWindow || status.isTemporaryWindow;
+    if (!canImport && status && status.isReadOnly) {
         if (confirm('Spreadsheet import is currently locked in Read-Only mode.\n\nWould you like to submit an access request to the Administrator now?')) {
             openCreateUserRequestModal();
             document.getElementById('req-category').value = 'account_correction';

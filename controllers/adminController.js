@@ -472,19 +472,24 @@ const createTemporaryAccessWindow = async (req, res) => {
     }
 
     try {
-        const actions = Array.isArray(permittedActions) ? permittedActions : ['update_points'];
+        const actions = Array.isArray(permittedActions) && permittedActions.length > 0 
+            ? permittedActions 
+            : ['update_points', 'edit_accounts', 'add_accounts', 'import_excel'];
+
         const resInsert = await run(
             `INSERT INTO temporary_access_windows (user_id, start_time, end_time, permitted_actions, is_active, created_by)
              VALUES (?, ?, ?, ?, 1, ?)`,
             [userId, startTime, endTime, JSON.stringify(actions), req.user.id]
         );
 
-        // Also ensure user has temporary 'update_points' permission
-        await run(
-            `INSERT OR REPLACE INTO user_permissions (user_id, permission_key, granted_at, expires_at, granted_by)
-             VALUES (?, 'update_points', datetime('now'), ?, ?)`,
-            [userId, endTime, req.user.id]
-        );
+        // Ensure user has temporary permissions for all permitted actions
+        for (const act of actions) {
+            await run(
+                `INSERT OR REPLACE INTO user_permissions (user_id, permission_key, granted_at, expires_at, granted_by)
+                 VALUES (?, ?, datetime('now'), ?, ?)`,
+                [userId, act, endTime, req.user.id]
+            );
+        }
 
         await run(
             `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, result)
@@ -570,7 +575,7 @@ const scheduleUserWindow = async (req, res) => {
 
         const actions = Array.isArray(permittedActions) && permittedActions.length > 0 
             ? permittedActions 
-            : ['update_points', 'edit_accounts'];
+            : ['update_points', 'edit_accounts', 'add_accounts', 'import_excel'];
 
         const startTimeIso = now.toISOString();
         const endTimeIso = end.toISOString();
@@ -604,7 +609,7 @@ const scheduleUserWindow = async (req, res) => {
             [
                 userId,
                 Math.round((end.getTime() - now.getTime()) / 60000),
-                actions.includes('add_accounts') ? 1 : 0,
+                (actions.includes('add_accounts') || actions.includes('import_excel')) ? 1 : 0,
                 (actions.includes('edit_accounts') || actions.includes('update_points')) ? 1 : 0,
                 endTimeIso
             ]
@@ -1153,11 +1158,19 @@ const reviewAccountCorrectionRequest = async (req, res) => {
         if (action === 'approve' && tempWindowHours) {
             const start = new Date().toISOString();
             const end = new Date(Date.now() + parseInt(tempWindowHours) * 3600 * 1000).toISOString();
+            const correctionActs = ['edit_accounts', 'add_accounts', 'import_excel', 'update_points'];
             await run(
                 `INSERT INTO temporary_access_windows (user_id, start_time, end_time, permitted_actions, is_active, created_by)
-                 VALUES (?, ?, ?, '["edit_accounts"]', 1, ?)`,
-                [reqRow.user_id, start, end, req.user.id]
+                 VALUES (?, ?, ?, ?, 1, ?)`,
+                [reqRow.user_id, start, end, JSON.stringify(correctionActs), req.user.id]
             );
+            for (const act of correctionActs) {
+                await run(
+                    `INSERT OR REPLACE INTO user_permissions (user_id, permission_key, granted_at, expires_at, granted_by)
+                     VALUES (?, ?, datetime('now'), ?, ?)`,
+                    [reqRow.user_id, act, end, req.user.id]
+                );
+            }
         }
 
         // Log in account activity

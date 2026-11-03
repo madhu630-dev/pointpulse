@@ -824,8 +824,10 @@ const uploadExcel = async (req, res) => {
     // Enforce editing restriction on backend (Read-Only by default)
     if (user.role !== 'admin') {
         const editStatus = await getUserEditingPeriodStatus(user.id);
-        const hasImportPerm = user.permissions && user.permissions.includes('import_excel');
-        if (!hasImportPerm && !editStatus.canAdd) {
+        const hasImportPerm = (user.permissions && (user.permissions.includes('import_excel') || user.permissions.includes('add_accounts') || user.permissions.includes('all'))) ||
+                              (user.temporary_actions && (user.temporary_actions.includes('import_excel') || user.temporary_actions.includes('add_accounts') || user.temporary_actions.includes('all')));
+        const canUpload = hasImportPerm || editStatus.canImportExcel || editStatus.canAdd || editStatus.canAddAccounts || editStatus.isWithinWindow || editStatus.isTemporaryWindow;
+        if (!canUpload) {
             return res.status(403).json({ 
                 error: 'Account addition & spreadsheet import is locked (Read-Only mode). Please submit an access request to the administrator.',
                 code: 'READ_ONLY'
@@ -1094,9 +1096,10 @@ const bulkUploadPointsExcel = async (req, res) => {
 
     // Check permissions / editing status (Read-Only enforcement)
     if (user.role !== 'admin') {
-        const hasPointsPerm = user.permissions && user.permissions.includes('update_points');
+        const hasPointsPerm = (user.permissions && (user.permissions.includes('update_points') || user.permissions.includes('all'))) ||
+                              (user.temporary_actions && (user.temporary_actions.includes('update_points') || user.temporary_actions.includes('all')));
         const editStatus = await getUserEditingPeriodStatus(user.id);
-        const canUpdate = hasPointsPerm || editStatus.canUpdatePoints;
+        const canUpdate = hasPointsPerm || editStatus.canUpdatePoints || editStatus.isWithinWindow || editStatus.isTemporaryWindow;
         if (!canUpdate) {
             if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) {} }
             return res.status(403).json({

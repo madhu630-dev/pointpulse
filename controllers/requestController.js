@@ -154,9 +154,21 @@ const updateRequestStatus = async (req, res) => {
             const mins = parseInt(req.body.grantWindowMinutes) || 120;
             const winNow = new Date();
             const winEnd = new Date(winNow.getTime() + (mins * 60 * 1000));
-            const acts = reqRow.category === 'points_update' 
-                ? ['update_points'] 
-                : ['update_points', 'edit_accounts'];
+
+            // Determine permitted actions: honor body, or grant full operational write window
+            let acts = Array.isArray(req.body.permittedActions) && req.body.permittedActions.length > 0 
+                ? req.body.permittedActions 
+                : null;
+
+            if (!acts) {
+                // If pure points update without any mention of accounts/excel, grant points update; otherwise grant all operations
+                const isOnlyPoints = reqRow.category === 'points_update' && 
+                    !/excel|import|add|account/i.test(reqRow.subject || '') && 
+                    !/excel|import|add|account/i.test(reqRow.message || '');
+                acts = isOnlyPoints 
+                    ? ['update_points'] 
+                    : ['update_points', 'edit_accounts', 'add_accounts', 'import_excel'];
+            }
 
             const winStartIso = winNow.toISOString();
             const winEndIso = winEnd.toISOString();
@@ -187,7 +199,7 @@ const updateRequestStatus = async (req, res) => {
                 [
                     reqRow.user_id,
                     mins,
-                    acts.includes('add_accounts') ? 1 : 0,
+                    (acts.includes('add_accounts') || acts.includes('import_excel')) ? 1 : 0,
                     winEndIso
                 ]
             );
