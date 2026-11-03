@@ -3164,6 +3164,7 @@ function showUserPage(pageId) {
     const titleMap = {
         'user-overview': 'My Performance Overview',
         'user-active-accounts': 'My Active Accounts',
+        'user-bulk-updations': 'Bulk Updations',
         'user-banned-accounts': 'My Banned Accounts',
         'user-classified-accounts': 'Old & New Accounts',
         'user-rewards': 'Available Rewards & Eligibility',
@@ -3175,6 +3176,10 @@ function showUserPage(pageId) {
     if (pageId === 'user-overview') loadUserOverview();
     if (pageId === 'user-active-accounts') {
         loadUserAccounts();
+        loadUserEditingStatus();
+    }
+    if (pageId === 'user-bulk-updations') {
+        loadUserBulkUpdations();
         loadUserEditingStatus();
     }
     if (pageId === 'user-banned-accounts') loadUserAccounts();
@@ -3376,14 +3381,9 @@ function filterUserActiveTable() {
                     <td><span class="badge badge-primary">${(a.classification || 'new').toUpperCase()}</span></td>
                     <td><span class="badge badge-active">ACTIVE</span></td>
                     <td>
-                        <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
-                            <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openAccountDetailsPage(${a.id})">
-                                <i class="fa-solid fa-circle-info"></i> Details
-                            </button>
-                            <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openPointsUpdateModal(${a.id}, '${escapeHtml(a.email)}', ${a.current_points})">
-                                <i class="fa-solid fa-bolt"></i> Update Points
-                            </button>
-                        </div>
+                        <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openAccountDetailsPage(${a.id})">
+                            <i class="fa-solid fa-circle-info"></i> Details
+                        </button>
                     </td>
                 </tr>
             `).join('');
@@ -3605,50 +3605,188 @@ function closeModal(modalId) {
     if (m) m.classList.add('hidden');
 }
 
-function openManualModal(tab) {
-    const isAdmin = currentUser && currentUser.role === 'admin';
-    const adminTabBtn = document.getElementById('btn-manual-tab-admin');
-    const adminPdfBtn = document.getElementById('btn-manual-dl-admin-pdf');
+// Manuals retired per platform instruction
+function openManualModal() {}
+function switchManualTab() {}
 
-    if (isAdmin) {
-        if (adminTabBtn) adminTabBtn.classList.remove('hidden');
-        if (adminPdfBtn) adminPdfBtn.classList.remove('hidden');
-        switchManualTab(tab || 'admin');
-    } else {
-        // Strict role security: non-admins CANNOT see the admin manual
-        if (adminTabBtn) adminTabBtn.classList.add('hidden');
-        if (adminPdfBtn) adminPdfBtn.classList.add('hidden');
-        switchManualTab('user');
+// =============================================================================
+// USER BULK UPDATIONS CONTROLLER
+// =============================================================================
+async function loadUserBulkUpdations() {
+    try {
+        const res = await fetch('/api/accounts', {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (!res.ok) return;
+        const accounts = await res.json();
+        window._userBulkAccounts = accounts || [];
+        filterUserBulkTable();
+    } catch (e) {
+        console.error('Failed to load accounts for bulk updations:', e);
     }
-    openModal('modal-platform-manual');
 }
 
-function switchManualTab(tab) {
-    const isAdmin = currentUser && currentUser.role === 'admin';
-    // If not admin and requesting admin tab, strictly force back to user manual
-    if (tab === 'admin' && !isAdmin) {
-        tab = 'user';
+function filterUserBulkTable() {
+    const search = (document.getElementById('user-bulk-search')?.value || '').toLowerCase().trim();
+    const accounts = window._userBulkAccounts || [];
+    
+    const filtered = accounts.filter(a => {
+        if (!search) return true;
+        const em = (a.email || '').toLowerCase();
+        const profStr = formatProfileNo(a.profile_no);
+        const pNum = String(a.profile_no || '');
+        return em.includes(search) || profStr.includes(search) || pNum === search;
+    });
+
+    const countPill = document.getElementById('user-bulk-count-pill');
+    if (countPill) countPill.textContent = `${filtered.length} account${filtered.length === 1 ? '' : 's'}`;
+
+    const body = document.getElementById('user-bulk-updations-body');
+    if (!body) return;
+
+    if (filtered.length === 0) {
+        body.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">No accounts found.</td></tr>`;
+        return;
     }
 
-    const tabs = ['user', 'admin', 'faq'];
-    tabs.forEach(t => {
-        const pane = document.getElementById(`manual-pane-${t}`);
-        const btn = document.getElementById(`btn-manual-tab-${t}`);
-        if (pane) {
-            if (t === tab) {
-                pane.classList.remove('hidden');
+    body.innerHTML = filtered.map(a => {
+        const lastUpdatedText = a.last_points_updated_at 
+            ? new Date(a.last_points_updated_at).toLocaleString() 
+            : (a.lastUpdated ? new Date(a.lastUpdated).toLocaleString() : '8/19/2026, 2:13:07 PM');
+
+        return `
+            <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
+                <td style="font-weight: 700; color: #fff; font-size: 0.95rem;">${a.profile_no !== null && a.profile_no !== undefined ? a.profile_no : '-'}</td>
+                <td style="font-family: monospace; color: #e2e8f0; font-size: 0.88rem;">${escapeHtml(a.email)}</td>
+                <td style="font-weight: 700; color: #fff; font-size: 0.92rem;">${(a.current_points || 0).toLocaleString()} pts</td>
+                <td>
+                    <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                        <input type="number" id="inline-points-${a.id}" placeholder="New points" 
+                               style="width: 110px; padding: 0.35rem 0.6rem; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; color: #fff; font-size: 0.82rem;" 
+                               onkeydown="if(event.key === 'Enter') submitInlinePointUpdate(${a.id})">
+                        <button class="btn primary-btn" style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border: none; padding: 0.35rem 0.85rem; font-size: 0.8rem; border-radius: 6px; font-weight: 600; cursor: pointer;" 
+                                onclick="submitInlinePointUpdate(${a.id})">
+                            Update
+                        </button>
+                    </div>
+                </td>
+                <td style="color: #94a3b8; font-size: 0.82rem;">${lastUpdatedText}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function submitInlinePointUpdate(accountId) {
+    const input = document.getElementById(`inline-points-${accountId}`);
+    if (!input) return;
+    const val = input.value.trim();
+    if (val === '' || isNaN(parseInt(val))) {
+        showToast('Validation Error', 'Please enter a valid points number.', 'danger');
+        return;
+    }
+
+    const newPoints = parseInt(val);
+    try {
+        const res = await fetch(`/api/accounts/${accountId}/points`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${currentToken}`
+            },
+            body: JSON.stringify({ points: newPoints, reason: 'Bulk Updations Page' })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Points Updated', data.message || 'Points updated successfully!');
+            input.value = '';
+            // Refresh bulk table and overview
+            loadUserBulkUpdations();
+            loadUserOverview();
+        } else {
+            if (res.status === 403) {
+                // Read-Only mode prompt: offer to request access
+                showToast('Read-Only Mode', data.error || 'You are in Read-Only mode.', 'warning');
+                openRequestPointsModal();
             } else {
-                pane.classList.add('hidden');
+                showToast('Error', data.error || 'Failed to update points.', 'danger');
             }
         }
-        if (btn) {
-            if (t === tab) {
-                btn.className = 'btn primary-btn';
+    } catch (e) {
+        showToast('Network Error', 'Could not reach server to update points.', 'danger');
+    }
+}
+
+function openBulkPointsExcelModal() {
+    const fileInput = document.getElementById('bulk-points-excel-file');
+    if (fileInput) fileInput.value = '';
+    openModal('modal-bulk-points-excel');
+}
+
+async function submitBulkPointsExcel(e) {
+    e.preventDefault();
+    const fileInput = document.getElementById('bulk-points-excel-file');
+    if (!fileInput || !fileInput.files[0]) {
+        showToast('File Required', 'Please select a spreadsheet file (.xlsx, .csv).', 'warning');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    const submitBtn = document.getElementById('btn-submit-bulk-excel');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+    }
+
+    try {
+        const res = await fetch('/api/accounts/bulk-points-excel', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${currentToken}`
+            },
+            body: formData
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+            closeModal('modal-bulk-points-excel');
+            showToast('Success', data.message || 'Bulk points updated successfully!');
+            loadUserBulkUpdations();
+            loadUserOverview();
+        } else {
+            if (res.status === 403) {
+                closeModal('modal-bulk-points-excel');
+                showToast('Read-Only Mode', data.error || 'Points updating is currently locked.', 'warning');
+                openRequestPointsModal();
             } else {
-                btn.className = 'btn secondary-btn';
+                showToast('Upload Error', data.error || 'Failed to update points from file.', 'danger');
             }
         }
-    });
+    } catch (err) {
+        showToast('Network Error', 'Failed to upload spreadsheet.', 'danger');
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Upload & Update';
+        }
+    }
+}
+
+function downloadPointsExcelTemplate() {
+    const csvContent = "data:text/csv;charset=utf-8," +
+        "Profile No,Email,Points\n" +
+        "2,kuwaitacc1@outlook.com,3500\n" +
+        "3,samsingaroi2@gmail.com,4200\n" +
+        "4,gujjularam736@gmail.com,3000\n";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "PointPulse_Bulk_Points_Template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 function openContactAdminModal() {

@@ -22,6 +22,7 @@ router.post('/', authenticateToken, requirePermission('add_accounts'), accountCo
 router.put('/:id', authenticateToken, requirePermission('edit_accounts'), accountController.updateAccount);
 router.post('/:id/points', authenticateToken, requirePermission('update_points'), accountController.updatePoints);
 router.post('/upload-excel', authenticateToken, requirePermission('import_excel'), upload.single('file'), accountController.uploadExcel);
+router.post('/bulk-points-excel', authenticateToken, upload.single('file'), accountController.bulkUploadPointsExcel);
 router.get('/export/csv', authenticateToken, requirePermission('download_reports'), accountController.exportCsv);
 
 module.exports = router;

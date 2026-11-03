@@ -1088,6 +1088,149 @@ const exportCsv = async (req, res) => {
     }
 };
 
+// Bulk Points Update via Excel / CSV (Dedicated to Bulk Updations page)
+const bulkUploadPointsExcel = async (req, res) => {
+    const user = req.user;
+
+    // Check permissions / editing status (Read-Only enforcement)
+    if (user.role !== 'admin') {
+        const hasPointsPerm = user.permissions && user.permissions.includes('update_points');
+        const editStatus = await getUserEditingPeriodStatus(user.id);
+        const canUpdate = hasPointsPerm || editStatus.canUpdatePoints;
+        if (!canUpdate) {
+            if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) {} }
+            return res.status(403).json({
+                error: 'Points updating is currently locked in Read-Only mode. Please submit an access request to the administrator.',
+                code: 'READ_ONLY'
+            });
+        }
+    }
+
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+        const workbook = xlsx.readFile(req.file.path);
+        const sheetName = workbook.SheetNames[0];
+        const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+        if (!rows || rows.length === 0) {
+            try { fs.unlinkSync(req.file.path); } catch (e) {}
+            return res.status(400).json({ error: 'The uploaded file is empty' });
+        }
+
+        const keys = Object.keys(rows[0]);
+        const emailCol = keys.find(k => {
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return (lk.includes('email') || lk.includes('identifier') || lk.includes('account') || lk.includes('outlook')) && !lk.includes('proton') && !lk.includes('alt') && !lk.includes('recovery');
+        });
+        const profileCol = keys.find(k => {
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return lk.includes('profile') || lk === 'prof' || lk === 'profno' || lk === 'profileno';
+        });
+        const pointsCol = keys.find(k => {
+            const lk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return lk.includes('point') || lk === 'pts' || lk === 'score' || lk === 'newpoints' || lk === 'currentpoints';
+        });
+
+        if (!pointsCol || (!emailCol && !profileCol)) {
+            try { fs.unlinkSync(req.file.path); } catch (e) {}
+            return res.status(400).json({
+                error: 'Invalid spreadsheet format. File must contain an Email or Profile No column, and a Points column.'
+            });
+        }
+
+        // Fetch accessible accounts for this user (strict data isolation)
+        const { data: allAccounts } = await supabase.from('Users').select('id, email, profile_no');
+        const metaRows = await all(`SELECT account_id, user_id FROM account_metadata`);
+        const metaMap = new Map();
+        metaRows.forEach(m => metaMap.set(m.account_id, m.user_id));
+
+        const adminRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
+        const defaultAdminId = adminRow ? adminRow.id : 1;
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
+
+        const accessibleAccounts = (allAccounts || []).filter(acc => {
+            if (user.role === 'admin') return true;
+            const metaOwner = metaMap.get(acc.id);
+            const assignedId = (metaOwner && metaOwner !== defaultAdminId && metaOwner !== 1) ? metaOwner : primaryOperatorId;
+            return assignedId === user.id;
+        });
+
+        const accByEmail = new Map();
+        const accByProfile = new Map();
+        accessibleAccounts.forEach(acc => {
+            if (acc.email) accByEmail.set(acc.email.toLowerCase().trim(), acc);
+            if (acc.profile_no !== null && acc.profile_no !== undefined) {
+                accByProfile.set(parseInt(acc.profile_no), acc);
+            }
+        });
+
+        let updatedCount = 0;
+        const nowIso = new Date().toISOString();
+
+        for (const r of rows) {
+            let matchedAcc = null;
+            if (emailCol && r[emailCol]) {
+                const em = String(r[emailCol]).toLowerCase().trim();
+                matchedAcc = accByEmail.get(em);
+            }
+            if (!matchedAcc && profileCol && r[profileCol] !== undefined) {
+                const pNum = parseInt(String(r[profileCol]).replace(/\D/g, ''));
+                if (!isNaN(pNum)) matchedAcc = accByProfile.get(pNum);
+            }
+
+            if (!matchedAcc) continue;
+
+            const rawPts = r[pointsCol];
+            if (rawPts === undefined || rawPts === null || rawPts === '') continue;
+            const ptVal = parseInt(String(rawPts).replace(/,/g, '').trim());
+            if (isNaN(ptVal)) continue;
+
+            // Insert new points record into Supabase
+            const { error: insErr } = await supabase.from('Points').insert([{
+                user_id: matchedAcc.id,
+                points: ptVal,
+                date: 'Bulk Updation Sheet',
+                updated_at: nowIso
+            }]);
+
+            if (!insErr) {
+                await run(
+                    `INSERT INTO points_audit_log (account_id, user_id, previous_points, new_points, difference, updated_by, updated_by_name, source, auth_ref)
+                     VALUES (?, ?, 0, ?, 0, ?, ?, 'excel_bulk', 'Bulk Updations Page')`,
+                    [matchedAcc.id, user.id, ptVal, user.id, user.name]
+                );
+                updatedCount++;
+            }
+        }
+
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, result)
+             VALUES (?, ?, ?, ?, 'Bulk Points Updated via Excel', ?, 'success')`,
+            [user.id, user.email, user.role, user.id, JSON.stringify({ updatedCount, filename: req.file.originalname })]
+        );
+
+        if (io) {
+            io.emit('points_updated', { bulk: true, count: updatedCount });
+            io.emit('accounts_updated');
+        }
+
+        res.json({
+            success: true,
+            updatedCount,
+            message: `Successfully updated points for ${updatedCount} account(s).`
+        });
+
+    } catch (error) {
+        console.error('Bulk Points Excel Error:', error);
+        try { if (req.file) fs.unlinkSync(req.file.path); } catch (e) {}
+        res.status(500).json({ error: 'Failed to process bulk points spreadsheet' });
+    }
+};
+
 module.exports = {
     setIo,
     getAccounts,
@@ -1098,5 +1241,6 @@ module.exports = {
     submitAccountCorrectionRequest,
     updatePoints,
     uploadExcel,
+    bulkUploadPointsExcel,
     exportCsv
 };

@@ -161,10 +161,6 @@
                 <a href="#" onclick="openModal('modal-auth-setup'); return false;" style="color: var(--text-secondary); font-size: 0.78rem; text-decoration: underline;">
                     <i class="fa-brands fa-google"></i> Google OAuth Setup
                 </a>
-                <span style="color: rgba(255,255,255,0.2);">•</span>
-                <a href="#" onclick="openManualModal(); return false;" style="color: #818cf8; font-size: 0.78rem; text-decoration: underline; font-weight: 600;">
-                    <i class="fa-solid fa-book-open"></i> User & Administrator Manual
-                </a>
             </div>
         </div>
     </div>
@@ -337,9 +333,6 @@
                     <button class="sidebar-nav-btn" data-page="admin-audit">
                         <i class="fa-solid fa-file-shield"></i> <span>Audit Logs</span>
                     </button>
-                    <button class="sidebar-nav-btn" onclick="openManualModal('admin'); return false;">
-                        <i class="fa-solid fa-book-open"></i> <span>Platform Manual</span>
-                    </button>
                 </div>
             </div>
 
@@ -352,6 +345,9 @@
                     </button>
                     <button class="sidebar-nav-btn" data-page="user-active-accounts">
                         <i class="fa-solid fa-list-check"></i> <span>Active Accounts</span>
+                    </button>
+                    <button class="sidebar-nav-btn" data-page="user-bulk-updations">
+                        <i class="fa-solid fa-bolt"></i> <span>Bulk Updations</span>
                     </button>
                     <button class="sidebar-nav-btn" data-page="user-banned-accounts">
                         <i class="fa-solid fa-ban"></i> <span>Banned Accounts</span>
@@ -371,9 +367,6 @@
                     </button>
                     <button class="sidebar-nav-btn" data-page="user-downloads">
                         <i class="fa-solid fa-download"></i> <span>Download Reports</span>
-                    </button>
-                    <button class="sidebar-nav-btn" onclick="openManualModal('user'); return false;">
-                        <i class="fa-solid fa-book-open"></i> <span>User Operating Manual</span>
                     </button>
                 </div>
             </div>
@@ -404,9 +397,6 @@
                 </div>
 
                 <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <button class="btn secondary-btn" style="padding: 0.35rem 0.75rem; font-size: 0.82rem;" onclick="openManualModal()" title="View System Manual & User Guide">
-                        <i class="fa-solid fa-book-open"></i> Manual
-                    </button>
                     <button class="icon-btn" onclick="openNotificationDrawer()" title="Notifications" style="position: relative;">
                         <i class="fa-solid fa-bell"></i>
                         <span id="top-bell-badge" class="nav-badge hidden" style="position: absolute; top: 0; right: 0;">0</span>
@@ -974,7 +964,6 @@
                                 <div id="user-editing-pill" class="badge" style="display: none; padding: 0.45rem 0.85rem; font-size: 0.82rem; font-weight: 600;"></div>
                                 <button id="btn-user-add-account" class="btn primary-btn" onclick="handleUserAddAccount()"><i class="fa-solid fa-plus"></i> Add Account</button>
                                 <button id="btn-user-upload-excel" class="btn secondary-btn" onclick="handleUserUploadExcel()"><i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Import Excel / CSV</button>
-                                <button id="btn-user-update-points" class="btn secondary-btn" onclick="openRequestPointsModal()"><i class="fa-solid fa-bolt"></i> Request Points Permission</button>
                             </div>
                         </div>
                         <div class="table-responsive">
@@ -991,6 +980,49 @@
                                     </tr>
                                 </thead>
                                 <tbody id="user-active-accounts-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: USER BULK UPDATIONS -->
+                <div id="page-user-bulk-updations" class="page-pane hidden">
+                    <div class="table-card" style="padding: 1.75rem; background: rgba(18, 24, 38, 0.95); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <h3 style="font-size: 1.6rem; font-weight: 800; color: #fff; margin: 0 0 0.35rem 0; letter-spacing: -0.02em;">Bulk Updations</h3>
+                                <p style="color: #94a3b8; font-size: 0.88rem; margin: 0;">View and manage points updates across all accounts. Upload an Excel file to bulk-update current points.</p>
+                            </div>
+                            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                                <div id="user-bulk-editing-pill" class="badge" style="display: none; padding: 0.45rem 0.85rem; font-size: 0.82rem; font-weight: 600;"></div>
+                                <button class="btn primary-btn" onclick="openBulkPointsExcelModal()" style="background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); border: none; padding: 0.55rem 1.2rem; font-weight: 600; border-radius: 8px; color: #fff; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35); font-size: 0.85rem; cursor: pointer;">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Upload Excel
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                                <input type="text" id="user-bulk-search" placeholder="Filter by email or profile #..." oninput="filterUserBulkTable()" class="form-control" style="width: 260px; padding: 0.4rem 0.75rem; font-size: 0.82rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 6px; color: #fff;">
+                                <span id="user-bulk-count-pill" class="badge badge-primary" style="font-size: 0.75rem;">0 accounts</span>
+                            </div>
+                            <button class="btn secondary-btn" style="padding: 0.35rem 0.75rem; font-size: 0.78rem;" onclick="loadUserBulkUpdations()">
+                                <i class="fa-solid fa-rotate"></i> Refresh
+                            </button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="modern-table" style="width: 100%;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+                                        <th style="color: #94a3b8; font-size: 0.72rem; letter-spacing: 0.06em; font-weight: 700;">PROF NO.</th>
+                                        <th style="color: #94a3b8; font-size: 0.72rem; letter-spacing: 0.06em; font-weight: 700;">EMAIL</th>
+                                        <th style="color: #94a3b8; font-size: 0.72rem; letter-spacing: 0.06em; font-weight: 700;">CURRENT POINTS</th>
+                                        <th style="color: #94a3b8; font-size: 0.72rem; letter-spacing: 0.06em; font-weight: 700;">UPDATE POINTS</th>
+                                        <th style="color: #94a3b8; font-size: 0.72rem; letter-spacing: 0.06em; font-weight: 700;">LAST UPDATED</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="user-bulk-updations-body"></tbody>
                             </table>
                         </div>
                     </div>
@@ -1706,263 +1738,41 @@
         </div>
     </div>
 
-    <!-- Modal: Platform Manual & Operating Guide -->
-    <div id="modal-platform-manual" class="modal-overlay hidden">
-        <div class="modal-box modal-xl">
+    <!-- Modal: Bulk Points Upload via Excel -->
+    <div id="modal-bulk-points-excel" class="modal-overlay hidden">
+        <div class="modal-box" style="max-width: 500px;">
             <div class="modal-header">
                 <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <div style="width: 38px; height: 38px; border-radius: 8px; background: rgba(99, 102, 241, 0.15); display: flex; align-items: center; justify-content: center; color: var(--primary-color); font-size: 1.15rem;">
-                        <i class="fa-solid fa-book-open"></i>
+                    <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(99, 102, 241, 0.15); display: flex; align-items: center; justify-content: center; color: var(--primary-color); font-size: 1.1rem;">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
                     </div>
                     <div>
-                        <h4 style="font-size: 1.15rem; font-weight: 700; margin: 0;">PointPulse Platform Manual</h4>
-                        <div style="font-size: 0.78rem; color: var(--text-secondary);">Enterprise Operating Guide for Users & Administrators</div>
+                        <h4 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Upload Excel for Bulk Points</h4>
+                        <div style="font-size: 0.78rem; color: var(--text-secondary);">Bulk-update current points across your accounts</div>
                     </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
-                    <a href="/downloads/PointPulse_Operator_User_Manual.pdf" download class="btn primary-btn" id="btn-manual-dl-user-pdf" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" title="Download User Manual PDF">
-                        <i class="fa-solid fa-file-pdf"></i> User Manual (PDF)
-                    </a>
-                    <a href="/downloads/PointPulse_Administrator_Manual.pdf" download class="btn primary-btn hidden" id="btn-manual-dl-admin-pdf" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" title="Download Admin Manual PDF">
-                        <i class="fa-solid fa-file-shield"></i> Admin Manual (PDF)
-                    </a>
-                    <a href="/MANUAL.md" download="PointPulse_Manual.md" class="btn secondary-btn" style="padding: 0.35rem 0.55rem; font-size: 0.78rem;" title="Download Markdown document">
-                        <i class="fa-solid fa-download"></i> MD
-                    </a>
-                    <button class="btn secondary-btn" style="padding: 0.35rem 0.55rem; font-size: 0.78rem;" onclick="window.print()" title="Print Manual">
-                        <i class="fa-solid fa-print"></i>
+                <button class="icon-btn" onclick="closeModal('modal-bulk-points-excel')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-bulk-points-excel" onsubmit="submitBulkPointsExcel(event)">
+                <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem;">
+                    <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 0.85rem; font-size: 0.82rem; color: #c7d2fe;">
+                        <i class="fa-solid fa-circle-info"></i> Spreadsheets must contain columns for <strong>Email</strong> (or <strong>Profile No</strong>) and <strong>Points</strong>.
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label style="font-size: 0.82rem; font-weight: 600; color: var(--text-secondary);">Excel / CSV File (.xlsx, .csv)</label>
+                        <button type="button" class="btn secondary-btn" onclick="downloadPointsExcelTemplate()" style="font-size: 0.74rem; padding: 0.25rem 0.55rem;">
+                            <i class="fa-solid fa-download"></i> Sample Template
+                        </button>
+                    </div>
+                    <input type="file" id="bulk-points-excel-file" accept=".xlsx,.xls,.csv" required class="form-control" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); color: #fff; padding: 0.6rem; border-radius: 6px;">
+                </div>
+                <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button type="button" class="btn secondary-btn" onclick="closeModal('modal-bulk-points-excel')">Cancel</button>
+                    <button type="submit" id="btn-submit-bulk-excel" class="btn primary-btn" style="background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); border: none; font-weight: 600;">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Upload & Update
                     </button>
-                    <button class="icon-btn" onclick="closeModal('modal-platform-manual')"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-            </div>
-
-            <!-- Tab Switcher -->
-            <div style="display: flex; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--border-color); padding: 0.5rem 1.5rem; gap: 0.5rem; overflow-x: auto;">
-                <button id="btn-manual-tab-user" class="btn primary-btn" onclick="switchManualTab('user')" style="padding: 0.4rem 1rem; font-size: 0.85rem; border-radius: 6px; font-weight: 600;">
-                    <i class="fa-solid fa-user-check"></i> Operator / User Manual
-                </button>
-                <button id="btn-manual-tab-admin" class="btn secondary-btn hidden" onclick="switchManualTab('admin')" style="padding: 0.4rem 1rem; font-size: 0.85rem; border-radius: 6px; font-weight: 600;">
-                    <i class="fa-solid fa-shield-halved"></i> Administrator Manual
-                </button>
-                <button id="btn-manual-tab-faq" class="btn secondary-btn" onclick="switchManualTab('faq')" style="padding: 0.4rem 1rem; font-size: 0.85rem; border-radius: 6px; font-weight: 600;">
-                    <i class="fa-solid fa-circle-question"></i> FAQs & Troubleshooting
-                </button>
-            </div>
-
-            <div class="modal-body manual-content" style="max-height: 68vh; overflow-y: auto;">
-                <!-- TAB 1: OPERATOR / USER MANUAL -->
-                <div id="manual-pane-user">
-                    <div class="manual-callout success">
-                        <strong><i class="fa-solid fa-circle-check"></i> Operator Handbook:</strong> This guide explains how operators (including <code>laptopmew1@gmail.com</code>) manage assigned accounts, add new profiles, import spreadsheets, request editing windows, and claim rewards.
-                    </div>
-
-                    <h3>1. Account Registration & Sign In</h3>
-                    <p>PointPulse supports both direct email/password authentication and one-click Google OAuth 2.0:</p>
-                    <ol>
-                        <li><strong>Registration:</strong> On the login screen, click the <strong>Create Account</strong> tab. Enter your Gmail address (e.g. <code>laptopmew1@gmail.com</code>), full name, and chosen password (min 6 characters), then submit.</li>
-                        <li><strong>Pending Review:</strong> New registrations require approval by the sole platform administrator (<code>001.workme@gmail.com</code>). You will see a notification confirming your application is under review.</li>
-                        <li><strong>Sign In:</strong> Once approved, switch to the <strong>Sign In</strong> tab, enter your Gmail address and password, and click <strong>Sign In to PointPulse</strong>, or click <strong>Continue with Google</strong>.</li>
-                    </ol>
-
-                    <h3>2. Navigating the Operator Dashboard</h3>
-                    <ul>
-                        <li><strong>My Overview:</strong> Key performance summary showing your assigned active accounts, total aggregated points, open requests, and eligible rewards.</li>
-                        <li><strong>Active Accounts:</strong> Main workspace displaying all accounts assigned to your profile.</li>
-                        <li><strong>Banned Accounts:</strong> Displays accounts flagged as banned or suspended.</li>
-                        <li><strong>Old & New Accounts:</strong> Filter accounts by age/tenure classification.</li>
-                        <li><strong>Available Rewards:</strong> Browse reward vouchers and submit redemption requests.</li>
-                        <li><strong>Request Center:</strong> Submit account correction requests or request points-editing permission windows.</li>
-                        <li><strong>Download Reports:</strong> Export your assigned accounts and points data to CSV.</li>
-                    </ul>
-
-                    <h3>3. Managing Accounts & Viewing Details</h3>
-                    <p>On the <strong>Active Accounts</strong> table, each account row provides three action buttons:</p>
-                    <ul>
-                        <li><strong>Details Button:</strong> Opens the Account Dossier with three tabs: <em>Overview</em>, <em>Credentials & Proxy</em> (server tag and recovery email; plain-text passwords are never displayed), and <em>Activity Logs</em>.</li>
-                        <li><strong>Points Button:</strong> View points breakdown or update points when an editing window is active.</li>
-                        <li><strong>Edit Button:</strong> Modify server, classification, or notes during an active Free Editing Period.</li>
-                    </ul>
-
-                    <h3>4. Adding Accounts (Single & Bulk Excel Upload)</h3>
-                    <h4>Option A: Single Account Addition</h4>
-                    <ol>
-                        <li>Click the blue <strong>+ Add Account</strong> button on the toolbar.</li>
-                        <li>Fill in the profile number (e.g. <code>P1</code>), account identifier (email), server (e.g. <code>US-AZ#146</code>), initial points, and classification.</li>
-                        <li>Click <strong>Save Account</strong>. The account is instantly assigned to your profile.</li>
-                    </ol>
-
-                    <h4>Option B: Bulk Excel / CSV Upload</h4>
-                    <ol>
-                        <li>Click <strong>Upload Excel</strong> on the toolbar.</li>
-                        <li>Click <strong>Download Sample CSV</strong> to review the exact column format.</li>
-                        <li>Select your <code>.csv</code> or <code>.xlsx</code> file and click <strong>Import Accounts</strong>.</li>
-                    </ol>
-                    <table class="manual-table">
-                        <thead>
-                            <tr>
-                                <th>Column Header</th>
-                                <th>Required?</th>
-                                <th>Example</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>profile_num</code></td>
-                                <td>Yes</td>
-                                <td><code>P1</code></td>
-                                <td>Internal profile or browser code</td>
-                            </tr>
-                            <tr>
-                                <td><code>account_identifier</code></td>
-                                <td>Yes</td>
-                                <td><code>operator.acc1@gmail.com</code></td>
-                                <td>Email or identifier</td>
-                            </tr>
-                            <tr>
-                                <td><code>server</code></td>
-                                <td>Yes</td>
-                                <td><code>US-AZ#146</code></td>
-                                <td>Assigned proxy / server name</td>
-                            </tr>
-                            <tr>
-                                <td><code>current_points</code></td>
-                                <td>No</td>
-                                <td><code>5000</code></td>
-                                <td>Initial points balance (default: 0)</td>
-                            </tr>
-                            <tr>
-                                <td><code>classification</code></td>
-                                <td>No</td>
-                                <td><code>OLD</code> or <code>NEW</code></td>
-                                <td>Account age / tenure badge</td>
-                            </tr>
-                            <tr>
-                                <td><code>status</code></td>
-                                <td>No</td>
-                                <td><code>active</code></td>
-                                <td>Account operational state</td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    <h3>5. Free Editing Period & Read-Only Locking</h3>
-                    <div class="manual-callout warning">
-                        <strong><i class="fa-solid fa-clock"></i> How the Free Editing Period Works:</strong>
-                        When approved, the Administrator grants you a temporary Free Editing Window (e.g. 24–48 hours). A green timer badge will display in your top navigation bar. During this period, you can add accounts, upload spreadsheets, and edit details. Once the window expires, your dashboard automatically transitions into <strong>Read-Only Mode</strong> to prevent accidental data changes.
-                    </div>
-                    <p>To request changes or an extension after the window expires:</p>
-                    <ol>
-                        <li>Go to <strong>Request Center</strong> in the sidebar.</li>
-                        <li>Click <strong>+ New Request</strong>.</li>
-                        <li>Select <strong>Account Correction</strong> (to fix an account mistake) or <strong>Points Update Window</strong> (to request a temporary editing session).</li>
-                        <li>The administrator will receive your request immediately and can approve it with one click.</li>
-                    </ol>
-
-                    <h3>6. Reward Catalogue & Redemptions</h3>
-                    <p>Navigate to <strong>Available Rewards</strong> to view current incentives, gift cards, and vouchers. When your accumulated points reach the required threshold, click <strong>Redeem Reward</strong> to submit your claim for administrative fulfillment.</p>
-
-                    <h3>7. Periodic Review Forms (Admin Dispatched)</h3>
-                    <p>The Periodic Review Form only appears when specifically dispatched by the Administrator to you. When sent, your dashboard will temporarily stop displaying and present the review form. Once you complete and submit the review, your access is unlocked and your dashboard resumes immediately.</p>
-                </div>
-
-                <!-- TAB 2: ADMINISTRATOR MANUAL -->
-                <div id="manual-pane-admin" class="hidden">
-                    <div class="manual-callout">
-                        <strong><i class="fa-solid fa-crown text-primary"></i> Sole-Administrator Governance:</strong>
-                        The platform enforces strict single-admin governance. The sole administrator identity is hardcoded to <code>001.workme@gmail.com</code>. No secondary administrators can be created or promoted.
-                    </div>
-
-                    <h3>1. Administrator Authentication</h3>
-                    <p>Sign in using email <code>001.workme@gmail.com</code> and your administrator password under the <strong>Sign In</strong> tab, or authenticate via <strong>Continue with Google</strong>.</p>
-
-                    <h3>2. User Management & Operator Approvals</h3>
-                    <p>Navigate to <strong>User Management</strong> in the sidebar:</p>
-                    <ul>
-                        <li><strong>Pending Approvals:</strong> View new operator registrations. Click <strong>Approve</strong> to activate their account and start their default Free Editing Window, or <strong>Reject</strong> to deny.</li>
-                        <li><strong>Active Operators:</strong> View all approved operators (such as <code>laptopmew1@gmail.com</code>).</li>
-                        <li><strong>Permissions:</strong> Toggle permissions for individual users (e.g. can add accounts, can edit points, can redeem rewards).</li>
-                        <li><strong>Review Form Dispatch:</strong> Click <strong>Send Form</strong> to dispatch the mandatory review form to a user (stops their dashboard until submitted), or <strong>Unlock Form</strong> to cancel.</li>
-                        <li><strong>Suspension:</strong> Click <strong>Suspend</strong> on any operator row to instantly revoke access.</li>
-                    </ul>
-
-                    <h3>3. Account Portfolio Ownership & Reassignment</h3>
-                    <p>Navigate to <strong>All Accounts</strong>:</p>
-                    <ul>
-                        <li><strong>Assigned Operator Column:</strong> Explicitly shows which operator owns each account.</li>
-                        <li><strong>Filter by Operator / Owner:</strong> Use the dropdown above the table to view accounts owned by <code>laptopmew1@gmail.com</code>, specific operators, or unassigned accounts.</li>
-                        <li><strong>Reassigning Single Accounts:</strong> Click <strong>Edit</strong> on any row, choose the operator from the <strong>Assign Operator</strong> dropdown, and save.</li>
-                        <li><strong>Bulk Migration ("Assign All to User"):</strong> Click the purple <strong>Assign All to User</strong> button on the toolbar, select <code>laptopmew1@gmail.com</code>, and confirm. All accounts in the platform will instantly transfer to that operator.</li>
-                    </ul>
-
-                    <h3>4. Free Editing Period Configuration</h3>
-                    <p>Click the <strong>Free Editing Periods</strong> button on the All Accounts toolbar:</p>
-                    <ul>
-                        <li>Set the default window duration (e.g. 24 hours, 48 hours, 7 days).</li>
-                        <li>Toggle whether newly approved users automatically receive a Free Editing Window.</li>
-                        <li>Grant custom editing windows to specific operators on demand.</li>
-                    </ul>
-
-                    <h3>5. Old / New Classification Kanban Board</h3>
-                    <p>Navigate to <strong>Old / New Board</strong> to drag and drop account cards between <code>OLD</code> and <code>NEW</code> tenure columns, or use batch-move actions.</p>
-
-                    <h3>6. Master Reward Catalogue</h3>
-                    <p>Navigate to <strong>Reward Catalogue</strong> to create, edit, or publish reward items, set required point thresholds, and manage inventory.</p>
-
-                    <h3>7. Notification Center & Correction Approvals</h3>
-                    <p>Navigate to <strong>Notification Center</strong> to review incoming operator requests (Account Corrections, Points Windows, Redemptions). Click <strong>Approve</strong> to apply corrections or open editing windows immediately.</p>
-
-                    <h3>8. Periodic Review Dispatch & Dashboard Gating</h3>
-                    <p>Navigate to <strong>Monthly Reviews</strong> in the sidebar to control review forms:</p>
-                    <ul>
-                        <li><strong>Send to All Operators:</strong> Click <strong>Send Form to All Operators</strong> to lock all dashboards until each operator finishes the review.</li>
-                        <li><strong>Send to Single Operator:</strong> Click <strong>Send Form</strong> on any operator in the dispatch table.</li>
-                        <li><strong>Cancel Requirement:</strong> Click <strong>Cancel & Resume Dashboard</strong> to unlock an operator's dashboard without requiring submission.</li>
-                        <li><strong>Submissions History:</strong> Click <strong>View Answers</strong> to inspect submitted responses.</li>
-                    </ul>
-                    <p>Navigate to <strong>Notification Center</strong> to review incoming operator requests (Account Corrections, Points Windows, Redemptions). Click <strong>Approve</strong> to apply corrections or open editing windows immediately.</p>
-
-                    <h3>8. Download Center & Executive PDF Generation</h3>
-                    <p>Navigate to <strong>Download Center</strong> to generate comprehensive executive PDF reports with performance charts and account breakdowns, or download full CSV data dumps.</p>
-
-                    <h3>9. Immutable Audit Logs</h3>
-                    <p>Navigate to <strong>Audit Logs</strong> to inspect the tamper-evident, append-only history of every login, account change, points update, and administrator action.</p>
-
-                    <h3>10. Google OAuth 2.0 Credentials Setup</h3>
-                    <p>Ensure Google authentication operates properly by configuring Google Cloud Console:</p>
-                    <ol>
-                        <li>Authorized JavaScript origins: <code>https://pointpulse-8bbn.onrender.com</code></li>
-                        <li>Authorized redirect URIs: <code>https://pointpulse-8bbn.onrender.com</code> (and <code>https://pointpulse-8bbn.onrender.com/api/auth/google/callback</code>)</li>
-                    </ol>
-                </div>
-
-                <!-- TAB 3: FAQS & TROUBLESHOOTING -->
-                <div id="manual-pane-faq" class="hidden">
-                    <h3>Frequently Asked Questions & Quick Solutions</h3>
-
-                    <h4>Q1: When I click "Sign In", nothing happens or the page reloads.</h4>
-                    <p><strong>Solution:</strong> The browser cache may be running an older cached JavaScript file. Press <code>Ctrl + F5</code> (Windows) or <code>Cmd + Shift + R</code> (Mac) to perform a hard refresh. PointPulse uses direct asynchronous API authentication.</p>
-
-                    <h4>Q2: I see "Application Submitted: Pending Review". How do I log in?</h4>
-                    <p><strong>Solution:</strong> In accordance with enterprise governance, new operator registrations must be approved by the administrator (<code>001.workme@gmail.com</code>). Once approved in <strong>User Management</strong>, your login is enabled immediately.</p>
-
-                    <h4>Q3: Why are "+ Add Account" and "Edit" buttons locked?</h4>
-                    <p><strong>Solution:</strong> Your <strong>Free Editing Period</strong> has concluded and your account is in Read-Only Mode. Go to <strong>Request Center</strong>, click <strong>+ New Request</strong>, and request an <strong>Account Correction</strong> or <strong>Points Window</strong>. The administrator will grant an extension.</p>
-
-                    <h4>Q4: How do I move all existing accounts to laptopmew1@gmail.com?</h4>
-                    <p><strong>Solution:</strong> Log in as administrator (<code>001.workme@gmail.com</code>), go to <strong>All Accounts</strong>, click the <strong>Assign All to User</strong> button on the toolbar, select <code>laptopmew1@gmail.com</code>, and click confirm. All accounts will transfer instantly.</p>
-
-                    <h4>Q5: Are account passwords visible in the platform?</h4>
-                    <p><strong>Solution:</strong> No. PointPulse enforces a zero plain-text password security standard. Account credentials display server tags and recovery identifiers, while user login passwords are encrypted with bcrypt.</p>
-                </div>
-            </div>
-
-            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="font-size: 0.78rem; color: var(--text-muted);">
-                    <i class="fa-solid fa-shield-check text-success"></i> Single-Admin Architecture (001.workme@gmail.com) • Zero Plain-Text Passwords
-                </div>
-                <button class="btn primary-btn" onclick="closeModal('modal-platform-manual')">Close Manual</button>
-            </div>
+            </form>
         </div>
     </div>
 
