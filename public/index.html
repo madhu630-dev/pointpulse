@@ -77,6 +77,11 @@
                 <i class="fa-solid fa-circle-check text-success"></i> Genuine Google Cloud Identity token validation active.<br>
                 Registration requires administrator authorization prior to dashboard access.
             </p>
+            <div style="margin-top: 1rem; text-align: center;">
+                <a href="#" onclick="openModal('modal-auth-setup'); return false;" style="color: var(--text-secondary); font-size: 0.78rem; text-decoration: underline;">
+                    <i class="fa-brands fa-google"></i> Google OAuth Setup & Redirect URI Guide
+                </a>
+            </div>
         </div>
     </div>
 
@@ -1341,15 +1346,16 @@
                         Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: var(--secondary-color); text-decoration: underline;">Google Cloud Console → APIs & Services → Credentials</a>.
                     </li>
                     <li style="margin-bottom: 0.6rem;">
-                        Click <strong>Create Credentials</strong> → <strong>OAuth client ID</strong> (Application type: <em>Web application</em>).<br>
-                        Under <strong>Authorized JavaScript origins</strong>, add your Render domain:<br>
-                        <code style="background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px; color: #38bdf8;">https://pointpulse-8bbn.onrender.com</code>
+                        Click your <strong>OAuth 2.0 Client ID</strong> (Application type: <em>Web application</em>).<br>
+                        1. Under <strong>Authorized JavaScript origins</strong>, add:<br>
+                        <code style="background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px; color: #38bdf8;">https://pointpulse-8bbn.onrender.com</code><br>
+                        2. Under <strong>Authorized redirect URIs</strong>, click <strong>+ ADD URI</strong> and add the EXACT same URL:<br>
+                        <code style="background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 4px; color: #4ade80; font-weight: bold;">https://pointpulse-8bbn.onrender.com</code><br>
+                        <em>(Ensure there is NO trailing slash <code>/</code> at the end of either URL).</em>
                     </li>
                     <li style="margin-bottom: 0.6rem;">
-                        Copy your <strong>Client ID</strong> (ends in <code>.apps.googleusercontent.com</code>).<br>
-                        Go to your <strong>Render Dashboard</strong> → <strong>pointpulse</strong> service → <strong>Environment</strong> tab, click <strong>Add Environment Variable</strong>:<br>
-                        Key: <code style="color: #4ade80;">GOOGLE_CLIENT_ID</code><br>
-                        Value: <code style="color: #4ade80;">[Your Client ID]</code>
+                        Click <strong>SAVE</strong> in Google Cloud Console.<br>
+                        If your Client ID is not yet in Render, copy your <strong>Client ID</strong> and add it to Render Environment Variables as <code>GOOGLE_CLIENT_ID</code>.
                     </li>
                 </ol>
 

@@ -249,6 +249,13 @@ function initiateGoogleLogin() {
         `&nonce=${nonce}` +
         `&prompt=select_account`;
 
+    const btn = document.getElementById('custom-google-btn');
+    const originalContent = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Connecting to Google...</span>`;
+        btn.disabled = true;
+    }
+
     // Attempt popup window first
     const width = 500;
     const height = 620;
@@ -277,6 +284,10 @@ function initiateGoogleLogin() {
         try {
             if (!popup || popup.closed) {
                 clearInterval(checkTimer);
+                if (btn) {
+                    btn.innerHTML = originalContent;
+                    btn.disabled = false;
+                }
                 return;
             }
             if (popup.location && popup.location.origin === window.location.origin) {
@@ -284,6 +295,10 @@ function initiateGoogleLogin() {
                 if (popupHash) {
                     clearInterval(checkTimer);
                     popup.close();
+                    if (btn) {
+                        btn.innerHTML = originalContent;
+                        btn.disabled = false;
+                    }
                     window.location.hash = popupHash;
                     handleGoogleAuthHash();
                 }
