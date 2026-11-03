@@ -136,11 +136,15 @@ const listUsers = async (req, res) => {
             });
         }
 
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : 1;
+
         // Aggregate per platform user
         const enrichedUsers = users.map(u => {
             const userAccounts = (allAccounts || []).filter(a => {
                 const m = metaMap.get(a.id);
-                return m ? m.user_id === u.id : (u.id === 1);
+                const assignedId = m ? m.user_id : primaryOperatorId;
+                return assignedId === u.id;
             });
             const activeCount = userAccounts.filter(a => a.status === 'active').length;
             const bannedCount = userAccounts.filter(a => a.status === 'banned').length;
@@ -304,9 +308,13 @@ const getUserDetails = async (req, res) => {
         const metaMap = new Map();
         metaRows.forEach(m => metaMap.set(m.account_id, m));
 
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : 1;
+
         const accounts = (allUserAccounts || []).filter(a => {
             const m = metaMap.get(a.id);
-            return m ? m.user_id == userId : (userId == 1);
+            const assignedId = m ? m.user_id : primaryOperatorId;
+            return assignedId == userId;
         }).map(a => {
             const m = metaMap.get(a.id);
             return {

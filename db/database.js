@@ -484,6 +484,23 @@ async function initSchema() {
         );
     }
 
+    // Fetch all accounts from Supabase and ensure they are populated into account_metadata for laptopmew1@gmail.com
+    try {
+        const { data: accounts } = await supabase.from('Users').select('id');
+        if (accounts && accounts.length > 0) {
+            for (const acc of accounts) {
+                await run(
+                    `INSERT INTO account_metadata (account_id, user_id, updated_at)
+                     VALUES (?, ?, datetime('now'))
+                     ON CONFLICT(account_id) DO UPDATE SET user_id = excluded.user_id, updated_at = datetime('now')`,
+                    [acc.id, operatorUser.id]
+                );
+            }
+        }
+    } catch (e) {
+        console.warn('[PointPulse DB] Remote account sync warning during init:', e.message);
+    }
+
     // Move all accounts in account_metadata to laptopmew1@gmail.com
     await run(`UPDATE account_metadata SET user_id = ?, updated_at = datetime('now')`, [operatorUser.id]);
     console.log(`[PointPulse DB] All accounts successfully assigned to operator: ${operatorUser.email} (ID: ${operatorUser.id})`);

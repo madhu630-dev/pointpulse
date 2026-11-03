@@ -494,10 +494,15 @@
 
                 <!-- VIEW: DEDICATED INDIVIDUAL USER PROFILE (12 TABS) -->
                 <div id="page-admin-user-detail" class="page-pane hidden">
-                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
-                        <button class="btn secondary-btn" onclick="showAdminPage('admin-users')"><i class="fa-solid fa-arrow-left"></i> Back to Users</button>
-                        <h3 id="detail-user-header" style="font-size: 1.4rem; font-weight: 700;">User Details</h3>
-                        <div id="detail-user-status-badge"></div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <button class="btn secondary-btn" onclick="showAdminPage('admin-users')"><i class="fa-solid fa-arrow-left"></i> Back to Users</button>
+                            <h3 id="detail-user-header" style="font-size: 1.4rem; font-weight: 700;">User Details</h3>
+                            <div id="detail-user-status-badge"></div>
+                        </div>
+                        <button class="btn primary-btn" onclick="adminAssignAllToCurrentDossierUser()" title="Assign all platform accounts to this operator">
+                            <i class="fa-solid fa-users-viewfinder"></i> Assign All Accounts to This User
+                        </button>
                     </div>
 
                     <!-- 12 TABS NAVIGATION -->

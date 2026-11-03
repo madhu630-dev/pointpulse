@@ -979,6 +979,31 @@ async function openUserDetails(userId) {
     }
 }
 
+async function adminAssignAllToCurrentDossierUser() {
+    if (!activeUserDetailId) return;
+    const data = window._activeUserDetails;
+    const userName = data?.user?.name || `User #${activeUserDetailId}`;
+    const userEmail = data?.user?.email || '';
+
+    if (!confirm(`Are you sure you want to assign ALL platform accounts in the database to ${userName} (${userEmail})?`)) return;
+
+    try {
+        const res = await fetch(`/api/admin/users/${activeUserDetailId}/claim-all-accounts`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        const resData = await res.json();
+        if (res.ok) {
+            showToast('Accounts Assigned', resData.message);
+            openUserDetails(activeUserDetailId);
+        } else {
+            showToast('Error', resData.error || 'Failed to assign accounts', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Network error', 'danger');
+    }
+}
+
 function switchUserTab(tabName) {
     const tabButtons = document.querySelectorAll('.tabs-nav .tab-btn');
     tabButtons.forEach(btn => btn.classList.remove('active'));

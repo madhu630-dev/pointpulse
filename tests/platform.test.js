@@ -333,6 +333,18 @@ async function runTests() {
         });
     });
 
+    await test('Admin User Dossier shows correct account counts for primary operator (laptopmew1@gmail.com)', async () => {
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        assert(laptopUser, 'laptopmew1@gmail.com must exist');
+        
+        const dossierRes = await api(`/api/admin/users/${laptopUser.id}`, {
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        assert.strictEqual(dossierRes.status, 200);
+        assert(Array.isArray(dossierRes.body.accounts), 'Dossier must return accounts array');
+        assert(dossierRes.body.accounts.length > 0, 'laptopmew1@gmail.com must have assigned accounts in dossier');
+    });
+
     await test('User cannot access another user or admin account (403 forbidden)', async () => {
         const allAccRes = await api('/api/accounts', {
             headers: { 'Authorization': `Bearer ${adminToken}` }
