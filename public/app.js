@@ -208,59 +208,90 @@ window.handleGoogleCredentialResponse = async function(response) {
     await processGoogleLogin(response.credential);
 };
 
-// Initiate Google Login popup or prompt on button click
+// Google OAuth Redirect & Callback Hash Handler
+function handleGoogleAuthHash() {
+    if (!window.location.hash) return;
+    const hash = window.location.hash.substring(1);
+    if (!hash.includes('id_token') && !hash.includes('access_token') && !hash.includes('error')) return;
+
+    const params = new URLSearchParams(hash);
+    const idToken = params.get('id_token');
+    const accessToken = params.get('access_token');
+    const error = params.get('error');
+
+    if (error) {
+        showAuthError(`Google authentication error: ${error}`);
+        window.history.replaceState(null, '', window.location.pathname);
+        return;
+    }
+
+    if (idToken || accessToken) {
+        window.history.replaceState(null, '', window.location.pathname);
+        showToast('Authenticating', 'Verifying Google credentials with PointPulse...');
+        processGoogleLogin(idToken || accessToken);
+    }
+}
+
+// Initiate Google Login (OAuth 2.0 Direct Popup & Universal Redirect Fallback)
 function initiateGoogleLogin() {
     if (!googleClientId) {
         openModal('modal-auth-setup');
         return;
     }
 
-    // A) First preference: Use Google OAuth2 Token Client popup (guaranteed instant popup on click)
-    if (googleTokenClient) {
-        try {
-            googleTokenClient.requestAccessToken({ prompt: 'select_account' });
-            return;
-        } catch (e) {
-            console.warn('googleTokenClient request failed, falling back:', e);
-        }
+    const redirectUri = window.location.origin;
+    const nonce = Math.random().toString(36).substring(2) + Date.now();
+    const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${encodeURIComponent(googleClientId)}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=token%20id_token` +
+        `&scope=${encodeURIComponent('openid email profile')}` +
+        `&nonce=${nonce}` +
+        `&prompt=select_account`;
+
+    // Attempt popup window first
+    const width = 500;
+    const height = 620;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+
+    let popup = null;
+    try {
+        popup = window.open(
+            oauthUrl,
+            'google_oauth_popup',
+            `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no`
+        );
+    } catch (e) {
+        popup = null;
     }
 
-    // B) If token client is not yet instantiated, attempt immediate initialization
-    if (window.google && google.accounts && google.accounts.oauth2) {
-        try {
-            googleTokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: googleClientId,
-                scope: 'openid email profile',
-                callback: async (tokenResponse) => {
-                    if (tokenResponse.error) {
-                        showAuthError(`Google Sign-In failed: ${tokenResponse.error_description || tokenResponse.error}`);
-                        return;
-                    }
-                    if (tokenResponse.access_token) {
-                        await processGoogleLogin(tokenResponse.access_token);
-                    }
-                }
-            });
-            googleTokenClient.requestAccessToken({ prompt: 'select_account' });
-            return;
-        } catch (e) {
-            console.warn('Instant tokenClient initialization failed:', e);
-        }
-    }
-
-    // C) Fallback to google.accounts.id prompt
-    if (window.google && google.accounts && google.accounts.id) {
-        google.accounts.id.prompt((notification) => {
-            if (notification.isNotDisplayed()) {
-                const reason = notification.getNotDisplayedReason();
-                console.warn('Google One Tap not displayed:', reason);
-                showAuthError(`Google prompt not displayed (${reason}). Please check Authorized Origins in Google Cloud Console.`);
-            }
-        });
+    // If popup was blocked by browser or failed, fallback to full page redirect!
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+        window.location.href = oauthUrl;
         return;
     }
 
-    showAuthError('Google Identity Services is loading. Please wait 2 seconds and try again.');
+    // Monitor popup for redirect with credentials
+    const checkTimer = setInterval(() => {
+        try {
+            if (!popup || popup.closed) {
+                clearInterval(checkTimer);
+                return;
+            }
+            if (popup.location && popup.location.origin === window.location.origin) {
+                const popupHash = popup.location.hash;
+                if (popupHash) {
+                    clearInterval(checkTimer);
+                    popup.close();
+                    window.location.hash = popupHash;
+                    handleGoogleAuthHash();
+                }
+            }
+        } catch (e) {
+            // Cross-origin restriction while user is on accounts.google.com - expected until redirect
+        }
+    }, 250);
 }
 
 // Process Google Login on Backend
@@ -2256,6 +2287,9 @@ async function submitPointsUpdate() {
 function toggleTheme() {
     document.body.classList.toggle('light-theme');
 }
+
+// Check for Google OAuth hash in URL upon redirect
+handleGoogleAuthHash();
 
 // Run initial session check & load authentication configuration
 loadAuthConfig();
