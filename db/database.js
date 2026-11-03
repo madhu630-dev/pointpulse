@@ -321,6 +321,47 @@ async function initSchema() {
         )
     `);
 
+    // Dedicated Account Activity Log Table (Administrative modifications only; NO points or redemptions)
+    await run(`
+        CREATE TABLE IF NOT EXISTS account_activity_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            actor_id INTEGER NOT NULL,
+            actor_name TEXT,
+            actor_role TEXT,
+            action_type TEXT NOT NULL,
+            description TEXT NOT NULL,
+            previous_data TEXT,
+            new_data TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    `);
+
+    // Admin-Controlled Free Editing Period System
+    await run(`
+        CREATE TABLE IF NOT EXISTS user_editing_periods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER UNIQUE,
+            is_enabled INTEGER DEFAULT 1,
+            duration INTEGER DEFAULT 7,
+            unit TEXT DEFAULT 'days',
+            start_event TEXT DEFAULT 'approval',
+            allow_add INTEGER DEFAULT 1,
+            allow_edit INTEGER DEFAULT 1,
+            custom_expires_at TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    `);
+
+    // Seed default global editing period if not present
+    const globalPeriod = await get(`SELECT * FROM user_editing_periods WHERE user_id IS NULL OR user_id = 0`);
+    if (!globalPeriod) {
+        await run(`
+            INSERT INTO user_editing_periods (user_id, is_enabled, duration, unit, start_event, allow_add, allow_edit)
+            VALUES (0, 1, 7, 'days', 'approval', 1, 1)
+        `);
+    }
+
     // Ensure classification and user_id exist on local Users table if present
     try {
         await run(`ALTER TABLE Users ADD COLUMN classification TEXT DEFAULT 'new'`);
@@ -410,11 +451,75 @@ async function initSchema() {
 // Check and establish initial schema
 initSchema().catch(err => console.error('[PointPulse DB Init Error]', err));
 
+// Calculate user editing status & remaining duration
+async function getUserEditingPeriodStatus(userId) {
+    const user = await get(`SELECT id, role, status, approved_at, created_at FROM app_users WHERE id = ?`, [userId]);
+    if (!user) return { canAdd: false, canEdit: false, isFreePeriodActive: false, message: 'User not found' };
+
+    if (user.role === 'admin') {
+        return { canAdd: true, canEdit: true, isFreePeriodActive: true, isUnlimited: true, remainingFormatted: 'Unlimited (Administrator)' };
+    }
+
+    // Check user-specific period first, fallback to global default (user_id = 0)
+    let period = await get(`SELECT * FROM user_editing_periods WHERE user_id = ?`, [userId]);
+    if (!period) {
+        period = await get(`SELECT * FROM user_editing_periods WHERE user_id = 0 OR user_id IS NULL`);
+    }
+
+    if (!period || !period.is_enabled) {
+        return {
+            canAdd: false,
+            canEdit: false,
+            isFreePeriodActive: false,
+            message: 'Free editing is disabled by the administrator. Please request access.'
+        };
+    }
+
+    let expiresAt = null;
+    if (period.custom_expires_at) {
+        expiresAt = new Date(period.custom_expires_at);
+    } else {
+        const startRefStr = (period.start_event === 'registration' || !user.approved_at) ? user.created_at : user.approved_at;
+        const startRef = new Date(startRefStr || user.created_at || Date.now());
+        const multiplier = (period.unit === 'hours') ? (3600 * 1000) : (24 * 3600 * 1000);
+        expiresAt = new Date(startRef.getTime() + (period.duration * multiplier));
+    }
+
+    const now = new Date();
+    const remainingMs = expiresAt.getTime() - now.getTime();
+    const isActive = remainingMs > 0;
+
+    let remainingFormatted = 'Expired';
+    if (isActive) {
+        const remainingDays = Math.floor(remainingMs / (24 * 3600 * 1000));
+        const remainingHours = Math.floor((remainingMs % (24 * 3600 * 1000)) / (3600 * 1000));
+        if (remainingDays > 0) {
+            remainingFormatted = `${remainingDays}d ${remainingHours}h remaining`;
+        } else {
+            const remainingMins = Math.floor((remainingMs % (3600 * 1000)) / (60 * 1000));
+            remainingFormatted = `${remainingHours}h ${remainingMins}m remaining`;
+        }
+    }
+
+    return {
+        canAdd: isActive && Boolean(period.allow_add),
+        canEdit: isActive && Boolean(period.allow_edit),
+        isFreePeriodActive: isActive,
+        expiresAt: expiresAt.toISOString(),
+        remainingMs: Math.max(0, remainingMs),
+        remainingFormatted,
+        duration: period.duration,
+        unit: period.unit,
+        startEvent: period.start_event
+    };
+}
+
 module.exports = {
     ADMIN_EMAIL,
     sqlite,
     run,
     get,
     all,
-    supabase
+    supabase,
+    getUserEditingPeriodStatus
 };

@@ -15,6 +15,9 @@ const upload = multer({ dest: 'uploads/' });
 
 // Account routes
 router.get('/', authenticateToken, requirePermission('view_accounts'), accountController.getAccounts);
+router.get('/editing-status', authenticateToken, accountController.getEditingStatus);
+router.get('/:id/details', authenticateToken, accountController.getAccountDetails);
+router.post('/:id/correction-request', authenticateToken, accountController.submitAccountCorrectionRequest);
 router.post('/', authenticateToken, requirePermission('add_accounts'), accountController.createAccount);
 router.put('/:id', authenticateToken, requirePermission('edit_accounts'), accountController.updateAccount);
 router.post('/:id/points', authenticateToken, requirePermission('update_points'), accountController.updatePoints);

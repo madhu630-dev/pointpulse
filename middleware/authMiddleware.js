@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { get, all, ADMIN_EMAIL } = require('../db/database');
+const { get, all, ADMIN_EMAIL, getUserEditingPeriodStatus } = require('../db/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pointpulse_jwt_secret_2026_enterprise_secure_token';
 
@@ -78,9 +78,9 @@ const requireApproved = (req, res, next) => {
     next();
 };
 
-// Require specific granular permission (Admins automatically pass)
+// Require specific granular permission (Admins automatically pass; Free editing window honored for account management)
 const requirePermission = (permissionKey) => {
-    return (req, res, next) => {
+    return async (req, res, next) => {
         if (!req.user) return res.status(401).json({ error: 'Authentication required' });
         
         // Administrator has all permissions
@@ -94,12 +94,24 @@ const requirePermission = (permissionKey) => {
         }
 
         // Check assigned permissions or temporary access window
-        const hasPerm = (req.user.permissions && req.user.permissions.includes(permissionKey)) ||
-                        (req.user.temporary_actions && req.user.temporary_actions.includes(permissionKey));
+        let hasPerm = (req.user.permissions && req.user.permissions.includes(permissionKey)) ||
+                      (req.user.temporary_actions && req.user.temporary_actions.includes(permissionKey));
+
+        // Check administrator-configured free editing period for add/edit/import
+        if (!hasPerm && (permissionKey === 'add_accounts' || permissionKey === 'edit_accounts' || permissionKey === 'import_excel')) {
+            try {
+                const editStatus = await getUserEditingPeriodStatus(req.user.id);
+                if ((permissionKey === 'add_accounts' || permissionKey === 'import_excel') && editStatus.canAdd) {
+                    hasPerm = true;
+                } else if (permissionKey === 'edit_accounts' && editStatus.canEdit) {
+                    hasPerm = true;
+                }
+            } catch (e) {}
+        }
 
         if (!hasPerm) {
             return res.status(403).json({ 
-                error: `Permission '${permissionKey}' required. Please submit a permission request to the administrator.`,
+                error: `Permission '${permissionKey}' required. Your free editing window may have expired. Please submit an access request to the administrator.`,
                 code: 'PERMISSION_DENIED',
                 permission: permissionKey
             });

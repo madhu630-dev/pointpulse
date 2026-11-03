@@ -701,10 +701,10 @@ function switchUserTab(tabName) {
                 <div class="table-responsive">
                     <table class="modern-table">
                         <thead>
-                            <tr><th>Prof #</th><th>Email</th><th>Server</th><th>Classification</th><th>Status</th></tr>
+                            <tr><th>Prof #</th><th>Email</th><th>Server</th><th>Classification</th><th>Status</th><th>Actions</th></tr>
                         </thead>
                         <tbody>
-                            ${filtered.length === 0 ? '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No accounts in this category.</td></tr>' : 
+                            ${filtered.length === 0 ? '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No accounts in this category.</td></tr>' : 
                             filtered.map(a => `
                                 <tr>
                                     <td><strong>P${a.profile_no || '-'}</strong></td>
@@ -712,6 +712,11 @@ function switchUserTab(tabName) {
                                     <td class="text-secondary">${a.server || '-'}</td>
                                     <td><span class="badge badge-primary">${(a.classification || 'new').toUpperCase()}</span></td>
                                     <td><span class="badge ${a.status === 'active' ? 'badge-active' : 'badge-banned'}">${a.status.toUpperCase()}</span></td>
+                                    <td>
+                                        <button class="btn secondary-btn" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="openAccountDetailsPage(${a.id})">
+                                            <i class="fa-solid fa-circle-info"></i> Details
+                                        </button>
+                                    </td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -796,6 +801,469 @@ async function saveUserPermissions(userId) {
             showToast('Permissions Saved', 'Updated user access permissions successfully.');
         } else {
             showToast('Error', 'Failed to update permissions', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Save failed', 'danger');
+    }
+}
+
+// 3. Admin All Accounts & Detailed Account Governance
+async function loadAllAccounts() {
+    try {
+        const res = await fetch('/api/accounts', {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (!res.ok) return;
+        const accounts = await res.json();
+        window._allAccounts = accounts;
+        filterAllAccountsTable();
+    } catch (e) {
+        console.error('Failed to load all accounts:', e);
+    }
+}
+
+function filterAllAccountsTable() {
+    const accounts = window._allAccounts || [];
+    const search = document.getElementById('all-acc-search')?.value.toLowerCase() || '';
+    const statusFilter = document.getElementById('all-acc-status-filter')?.value || 'all';
+    const classFilter = document.getElementById('all-acc-class-filter')?.value || 'all';
+
+    const filtered = accounts.filter(a => {
+        const matchSearch = a.email.toLowerCase().includes(search) || (a.profile_no && String(a.profile_no).includes(search));
+        const matchStatus = statusFilter === 'all' || a.status === statusFilter;
+        const matchClass = classFilter === 'all' || a.classification === classFilter;
+        return matchSearch && matchStatus && matchClass;
+    });
+
+    const body = document.getElementById('all-accounts-table-body');
+    if (!body) return;
+
+    if (filtered.length === 0) {
+        body.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">No accounts found matching criteria.</td></tr>';
+        return;
+    }
+
+    body.innerHTML = filtered.map(a => `
+        <tr>
+            <td><strong>P${a.profile_no || '-'}</strong></td>
+            <td>
+                <div style="font-weight: 600; color: #fff;">${escapeHtml(a.email)}</div>
+                ${a.recovery_email ? `<div class="text-secondary" style="font-size: 0.78rem;">Alt: ${escapeHtml(a.recovery_email)}</div>` : ''}
+            </td>
+            <td class="text-secondary">${a.server || '-'}</td>
+            <td style="color: var(--secondary-color); font-weight: 700;">${a.current_points.toLocaleString()}</td>
+            <td><span class="badge badge-primary">${(a.classification || 'new').toUpperCase()}</span></td>
+            <td><span class="badge ${a.status === 'active' ? 'badge-active' : 'badge-banned'}">${a.status.toUpperCase()}</span></td>
+            <td>
+                <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                    <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openAccountDetailsPage(${a.id})">
+                        <i class="fa-solid fa-circle-info"></i> Details
+                    </button>
+                    <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openPointsUpdateModal(${a.id}, '${escapeHtml(a.email)}', ${a.current_points})">
+                        <i class="fa-solid fa-bolt"></i> Points
+                    </button>
+                    <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openEditAccountModal(${a.id})">
+                        <i class="fa-solid fa-pen"></i> Edit
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// -----------------------------------------------------------------------------
+// DEDICATED ACCOUNT DETAILS PAGE (ADMIN & USER)
+// -----------------------------------------------------------------------------
+let lastActivePageBeforeDetails = null;
+
+async function openAccountDetailsPage(accountId) {
+    try {
+        const res = await fetch(`/api/accounts/${accountId}/details`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            showToast('Access Denied', err.error || 'Unable to open account details.', 'danger');
+            return;
+        }
+        const data = await res.json();
+        const acc = data.account;
+        const ed = data.editingStatus;
+        const logs = data.activityLogs || [];
+        const isAdmin = data.isAdmin;
+
+        // Remember which page was open
+        const visiblePage = document.querySelector('.page-pane:not(.hidden)');
+        if (visiblePage && visiblePage.id !== 'page-account-details') {
+            lastActivePageBeforeDetails = visiblePage.id;
+        }
+
+        // Hide all pages, show page-account-details
+        document.querySelectorAll('.page-pane').forEach(p => p.classList.add('hidden'));
+        const detailsPane = document.getElementById('page-account-details');
+        detailsPane.classList.remove('hidden');
+        document.getElementById('current-view-title').textContent = `Account Details: P${acc.profile_no || ''} (${acc.email})`;
+
+        // Populate Banner
+        document.getElementById('acc-detail-profile-badge').textContent = `P${acc.profile_no || '-'}`;
+        document.getElementById('acc-detail-email-title').textContent = acc.email;
+        
+        const statusBadge = document.getElementById('acc-detail-status-badge');
+        statusBadge.textContent = (acc.status || 'active').toUpperCase();
+        statusBadge.className = `badge ${acc.status === 'active' ? 'badge-active' : 'badge-banned'}`;
+
+        const classBadge = document.getElementById('acc-detail-class-badge');
+        classBadge.textContent = acc.classification === 'old' ? 'Old Account' : 'New Account';
+        classBadge.className = 'badge badge-primary';
+
+        const ownerPill = document.getElementById('acc-detail-owner-pill');
+        if (isAdmin && acc.owner) {
+            ownerPill.style.display = 'inline-block';
+            ownerPill.textContent = `Assigned User: ${acc.owner.name} (${acc.owner.email})`;
+        } else {
+            ownerPill.style.display = 'none';
+        }
+
+        const windowPill = document.getElementById('acc-detail-window-pill');
+        windowPill.innerHTML = `<span class="badge ${ed.isWithinWindow ? 'badge-active' : 'badge-pending'}"><i class="fa-solid fa-clock"></i> ${ed.statusText}</span>`;
+
+        // Section A: Overview
+        document.getElementById('acc-detail-prof-no').textContent = `Profile #${acc.profile_no || '-'}`;
+        document.getElementById('acc-detail-overview-email').textContent = acc.email;
+        document.getElementById('acc-detail-overview-status').textContent = (acc.status || 'active').toUpperCase();
+        document.getElementById('acc-detail-overview-class').textContent = acc.classification === 'old' ? 'Old Account' : 'New Account';
+        document.getElementById('acc-detail-created-at').textContent = acc.createdAt ? new Date(acc.createdAt).toLocaleString() : 'Legacy Record';
+        document.getElementById('acc-detail-registered-at').textContent = acc.registeredAt ? new Date(acc.registeredAt).toLocaleString() : 'System Migrated';
+        document.getElementById('acc-detail-updated-at').textContent = acc.lastUpdated ? new Date(acc.lastUpdated).toLocaleString() : 'Not modified';
+        document.getElementById('acc-detail-notes').textContent = acc.notes || 'None';
+
+        // Section B: Credentials & Information
+        document.getElementById('acc-detail-cred-email').textContent = acc.email;
+        document.getElementById('acc-detail-cred-alt').textContent = acc.recovery_email || 'Not Configured';
+        document.getElementById('acc-detail-cred-proton').textContent = acc.proton_email || 'None';
+        document.getElementById('acc-detail-cred-server').textContent = acc.server || 'None';
+
+        // Section C: Activity Log (Administrative Only)
+        const actBody = document.getElementById('acc-detail-activity-body');
+        if (logs.length === 0) {
+            actBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No administrative modifications recorded yet.</td></tr>';
+        } else {
+            actBody.innerHTML = logs.map(l => `
+                <tr>
+                    <td class="text-secondary">${new Date(l.created_at).toLocaleString()}</td>
+                    <td><span class="badge badge-primary">${escapeHtml(l.action_type || 'UPDATE')}</span></td>
+                    <td>${escapeHtml(l.description || '-')}</td>
+                    <td><strong>${escapeHtml(l.actor_name || 'System')}</strong> <span class="text-secondary" style="font-size: 0.78rem;">(${escapeHtml(l.actor_email || '')})</span></td>
+                    <td><span class="badge ${l.actor_role === 'admin' ? 'badge-active' : 'badge-secondary'}">${(l.actor_role || 'USER').toUpperCase()}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        // Top Action Bar
+        const bar = document.getElementById('account-details-action-bar');
+        if (isAdmin) {
+            bar.innerHTML = `
+                <button class="btn primary-btn" onclick="openEditAccountModal(${acc.id})"><i class="fa-solid fa-pen"></i> Edit Information</button>
+                <button class="btn secondary-btn" onclick="openAdminEditingPeriodModal(${acc.user_id || ''})"><i class="fa-solid fa-clock"></i> User Window Config</button>
+            `;
+        } else {
+            if (ed.canEdit) {
+                bar.innerHTML = `
+                    <button class="btn primary-btn" onclick="openEditAccountModal(${acc.id})"><i class="fa-solid fa-pen"></i> Edit Information</button>
+                `;
+            } else {
+                bar.innerHTML = `
+                    <button class="btn primary-btn" onclick="openAccountCorrectionModal(${acc.id}, '${escapeHtml(acc.email)}')"><i class="fa-solid fa-pen-ruler"></i> Request Correction / Edit</button>
+                `;
+            }
+        }
+
+    } catch (e) {
+        console.error('Failed to open account details:', e);
+        showToast('Error', 'Unable to fetch account details', 'danger');
+    }
+}
+
+function closeAccountDetailsPage() {
+    document.getElementById('page-account-details').classList.add('hidden');
+    if (lastActivePageBeforeDetails) {
+        const prev = document.getElementById(lastActivePageBeforeDetails);
+        if (prev) prev.classList.remove('hidden');
+        else if (currentUser.role === 'admin') showAdminPage('admin-all-accounts');
+        else showUserPage('user-active-accounts');
+    } else {
+        if (currentUser.role === 'admin') showAdminPage('admin-all-accounts');
+        else showUserPage('user-active-accounts');
+    }
+}
+
+// -----------------------------------------------------------------------------
+// ACCOUNT CREATION & EDITING MODAL
+// -----------------------------------------------------------------------------
+function openCreateAccountModal() {
+    document.getElementById('modal-account-title').textContent = 'Add Account Profile';
+    document.getElementById('acc-id').value = '';
+    document.getElementById('acc-profile-no').value = '';
+    document.getElementById('acc-email').value = '';
+    document.getElementById('acc-email').readOnly = false;
+    document.getElementById('acc-server').value = '';
+    document.getElementById('acc-classification').value = 'new';
+    document.getElementById('acc-status').value = 'active';
+    document.getElementById('acc-initial-points').value = '0';
+    document.getElementById('acc-initial-points').closest('.form-group').style.display = 'block';
+    document.getElementById('acc-notes').value = '';
+    openModal('modal-account');
+}
+
+async function openEditAccountModal(accountId) {
+    try {
+        const res = await fetch(`/api/accounts/${accountId}/details`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const acc = data.account;
+
+        document.getElementById('modal-account-title').textContent = `Edit Account: P${acc.profile_no || ''} (${acc.email})`;
+        document.getElementById('acc-id').value = acc.id;
+        document.getElementById('acc-profile-no').value = acc.profile_no || '';
+        document.getElementById('acc-email').value = acc.email;
+        document.getElementById('acc-server').value = acc.server || '';
+        document.getElementById('acc-classification').value = acc.classification || 'new';
+        document.getElementById('acc-status').value = acc.status || 'active';
+        document.getElementById('acc-initial-points').closest('.form-group').style.display = 'none';
+        document.getElementById('acc-notes').value = acc.notes || '';
+        openModal('modal-account');
+    } catch (e) {
+        showToast('Error', 'Failed to load account for editing', 'danger');
+    }
+}
+
+async function saveAccountRecord() {
+    const accId = document.getElementById('acc-id').value;
+    const profileNo = document.getElementById('acc-profile-no').value;
+    const email = document.getElementById('acc-email').value.trim();
+    const server = document.getElementById('acc-server').value.trim();
+    const classification = document.getElementById('acc-classification').value;
+    const status = document.getElementById('acc-status').value;
+    const initialPoints = parseInt(document.getElementById('acc-initial-points').value) || 0;
+    const notes = document.getElementById('acc-notes').value.trim();
+
+    if (!email) {
+        showToast('Required', 'Please enter account email / identifier', 'warning');
+        return;
+    }
+
+    try {
+        let res;
+        if (accId) {
+            res = await fetch(`/api/accounts/${accId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+                body: JSON.stringify({
+                    profileNo: profileNo ? Number(profileNo) : undefined,
+                    server,
+                    classification,
+                    status,
+                    notes
+                })
+            });
+        } else {
+            res = await fetch('/api/accounts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+                body: JSON.stringify({
+                    email,
+                    profileNo: profileNo ? Number(profileNo) : undefined,
+                    server,
+                    classification,
+                    status,
+                    currentPoints: initialPoints,
+                    notes
+                })
+            });
+        }
+
+        const data = await res.json();
+        if (res.ok) {
+            closeModal('modal-account');
+            showToast('Account Saved', data.message || 'Account successfully saved.');
+            if (currentUser.role === 'admin') {
+                loadAllAccounts();
+            } else {
+                loadUserAccounts();
+            }
+            if (!document.getElementById('page-account-details').classList.contains('hidden') && accId) {
+                openAccountDetailsPage(accId);
+            }
+        } else {
+            showToast('Denied', data.error || 'Could not save account', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Save failed', 'danger');
+    }
+}
+
+// -----------------------------------------------------------------------------
+// EXCEL / CSV UPLOAD (ADMIN & USER)
+// -----------------------------------------------------------------------------
+function openUploadExcelModal() {
+    document.getElementById('excel-file-input').value = '';
+    document.getElementById('fresh-upload-check').checked = false;
+    openModal('modal-upload-excel');
+}
+
+async function submitExcelUpload() {
+    const fileInput = document.getElementById('excel-file-input');
+    const isFresh = document.getElementById('fresh-upload-check').checked;
+
+    if (!fileInput.files || fileInput.files.length === 0) {
+        showToast('File Required', 'Please select a .xlsx or .csv file.', 'warning');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('isFresh', isFresh);
+
+    showToast('Uploading', 'Processing spreadsheet and synchronizing accounts...');
+
+    try {
+        const res = await fetch('/api/accounts/upload-excel', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` },
+            body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+            closeModal('modal-upload-excel');
+            showToast('Import Succeeded', `Processed ${data.totalRows} accounts (${data.created} created, ${data.updated} updated).`);
+            if (currentUser.role === 'admin') loadAllAccounts();
+            else loadUserAccounts();
+        } else {
+            showToast('Upload Failed', data.error || 'Failed to process spreadsheet', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Excel upload request failed', 'danger');
+    }
+}
+
+// -----------------------------------------------------------------------------
+// ACCOUNT CORRECTION REQUESTS (USER -> ADMIN)
+// -----------------------------------------------------------------------------
+function openAccountCorrectionModal(accountId, accountEmail) {
+    document.getElementById('corr-acc-id').value = accountId;
+    document.getElementById('corr-acc-email').value = accountEmail;
+    document.getElementById('corr-field').value = 'Recovery Email';
+    document.getElementById('corr-prev-val').value = '';
+    document.getElementById('corr-new-val').value = '';
+    document.getElementById('corr-reason').value = '';
+    openModal('modal-account-correction-request');
+}
+
+async function submitAccountCorrection() {
+    const accountId = document.getElementById('corr-acc-id').value;
+    const fieldName = document.getElementById('corr-field').value;
+    const previousValue = document.getElementById('corr-prev-val').value.trim();
+    const newValue = document.getElementById('corr-new-val').value.trim();
+    const reason = document.getElementById('corr-reason').value.trim();
+
+    if (!newValue || !reason) {
+        showToast('Required', 'Please enter the new requested value and reason.', 'warning');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/accounts/${accountId}/correction-request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ fieldName, previousValue, newValue, reason })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            closeModal('modal-account-correction-request');
+            showToast('Request Submitted', data.message || 'Correction request sent to administrator.');
+            if (!document.getElementById('page-account-details').classList.contains('hidden')) {
+                openAccountDetailsPage(accountId);
+            }
+        } else {
+            showToast('Failed', data.error || 'Could not submit correction request.', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Submission failed', 'danger');
+    }
+}
+
+// -----------------------------------------------------------------------------
+// ADMIN FREE EDITING PERIOD CONFIGURATION
+// -----------------------------------------------------------------------------
+async function openAdminEditingPeriodModal(targetUserId) {
+    try {
+        const usersRes = await fetch('/api/admin/users', {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        const users = await usersRes.json();
+        const select = document.getElementById('aep-target-user');
+        select.innerHTML = '<option value="">Global Default (All Registered Users)</option>' +
+            users.filter(u => u.status === 'approved').map(u => `<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join('');
+
+        if (targetUserId) {
+            select.value = String(targetUserId);
+        }
+
+        await onAdminEditingScopeChange();
+        openModal('modal-admin-editing-period');
+    } catch (e) {
+        console.error('Failed to open editing period modal:', e);
+    }
+}
+
+async function onAdminEditingScopeChange() {
+    const userId = document.getElementById('aep-target-user').value;
+    try {
+        const res = await fetch(`/api/admin/editing-periods?userId=${userId}`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (!res.ok) return;
+        const cfg = await res.json();
+        document.getElementById('aep-enabled').checked = !!cfg.enabled;
+        document.getElementById('aep-duration').value = cfg.duration_value || 7;
+        document.getElementById('aep-unit').value = cfg.duration_unit || 'days';
+        document.getElementById('aep-start-event').value = cfg.start_event || 'user_approval';
+        document.getElementById('aep-apply-add').checked = !!cfg.apply_to_add;
+        document.getElementById('aep-apply-edit').checked = !!cfg.apply_to_edit;
+    } catch (e) {}
+}
+
+async function saveAdminEditingPeriodConfig() {
+    const userId = document.getElementById('aep-target-user').value || null;
+    const enabled = document.getElementById('aep-enabled').checked;
+    const durationValue = parseInt(document.getElementById('aep-duration').value) || 7;
+    const durationUnit = document.getElementById('aep-unit').value;
+    const startEvent = document.getElementById('aep-start-event').value;
+    const applyToAdd = document.getElementById('aep-apply-add').checked;
+    const applyToEdit = document.getElementById('aep-apply-edit').checked;
+
+    try {
+        const res = await fetch('/api/admin/editing-periods', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({
+                userId,
+                enabled,
+                durationValue,
+                durationUnit,
+                startEvent,
+                applyToAdd,
+                applyToEdit
+            })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            closeModal('modal-admin-editing-period');
+            showToast('Configuration Saved', data.message || 'Free editing period configured.');
+        } else {
+            showToast('Error', data.error || 'Failed to save configuration', 'danger');
         }
     } catch (e) {
         showToast('Error', 'Save failed', 'danger');
@@ -1236,7 +1704,10 @@ function showUserPage(pageId) {
     document.getElementById('current-view-title').textContent = titleMap[pageId] || 'User Dashboard';
 
     if (pageId === 'user-overview') loadUserOverview();
-    if (pageId === 'user-active-accounts') loadUserAccounts();
+    if (pageId === 'user-active-accounts') {
+        loadUserAccounts();
+        loadUserEditingStatus();
+    }
     if (pageId === 'user-banned-accounts') loadUserAccounts();
     if (pageId === 'user-classified-accounts') loadUserAccounts();
     if (pageId === 'user-rewards') loadUserRewards();
@@ -1332,6 +1803,76 @@ async function loadUserAccounts() {
     } catch (e) {}
 }
 
+async function loadUserEditingStatus() {
+    try {
+        const res = await fetch('/api/accounts/editing-status', {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (!res.ok) return;
+        const status = await res.json();
+        window._userEditingStatus = status;
+
+        const pill = document.getElementById('user-editing-pill');
+        if (pill) {
+            pill.style.display = 'inline-block';
+            pill.className = `badge ${status.badgeClass || (status.isWithinWindow ? 'badge-active' : 'badge-pending')}`;
+            pill.innerHTML = `<i class="fa-solid fa-clock"></i> ${status.statusText}`;
+        }
+
+        const btnAdd = document.getElementById('btn-user-add-account');
+        if (btnAdd) {
+            if (!status.canAddAccounts) {
+                btnAdd.classList.add('opacity-75');
+                btnAdd.title = 'Free editing period has ended. Submit an Account Request to add accounts.';
+            } else {
+                btnAdd.classList.remove('opacity-75');
+                btnAdd.title = '';
+            }
+        }
+
+        const btnExcel = document.getElementById('btn-user-upload-excel');
+        if (btnExcel) {
+            if (!status.canImportExcel) {
+                btnExcel.classList.add('opacity-75');
+                btnExcel.title = 'Free editing period has ended. Submit an Account Request to import accounts.';
+            } else {
+                btnExcel.classList.remove('opacity-75');
+                btnExcel.title = '';
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load editing status:', e);
+    }
+}
+
+function handleUserAddAccount() {
+    const status = window._userEditingStatus;
+    if (status && !status.canAddAccounts) {
+        if (confirm('Your free editing period has ended. Account creations must be requested from the Administrator.\n\nWould you like to submit an Account Request now?')) {
+            openCreateUserRequestModal();
+            document.getElementById('req-category').value = 'account_correction';
+            document.getElementById('req-subject').value = 'Request Permission to Add Accounts';
+            document.getElementById('req-message').value = 'My free editing period has expired. Please grant access to register new accounts.';
+        }
+        return;
+    }
+    openCreateAccountModal();
+}
+
+function handleUserUploadExcel() {
+    const status = window._userEditingStatus;
+    if (status && !status.canImportExcel) {
+        if (confirm('Your free editing period has ended. Excel spreadsheet uploads must be requested from the Administrator.\n\nWould you like to submit an Account Request now?')) {
+            openCreateUserRequestModal();
+            document.getElementById('req-category').value = 'account_correction';
+            document.getElementById('req-subject').value = 'Request Permission for Excel Import';
+            document.getElementById('req-message').value = 'My free editing period has expired. Please grant access to import accounts via spreadsheet.';
+        }
+        return;
+    }
+    openUploadExcelModal();
+}
+
 function filterUserActiveTable() {
     const accounts = window._userAccounts || [];
     const search = document.getElementById('user-acc-search')?.value.toLowerCase() || '';
@@ -1345,15 +1886,23 @@ function filterUserActiveTable() {
             activeList.map(a => `
                 <tr>
                     <td><strong>P${a.profile_no || '-'}</strong></td>
-                    <td>${escapeHtml(a.email)}</td>
+                    <td>
+                        <div style="font-weight: 600; color: #fff;">${escapeHtml(a.email)}</div>
+                        ${a.recovery_email ? `<div class="text-secondary" style="font-size: 0.78rem;">Alt: ${escapeHtml(a.recovery_email)}</div>` : ''}
+                    </td>
                     <td class="text-secondary">${a.server || '-'}</td>
                     <td style="color: var(--secondary-color); font-weight: 700;">${a.current_points.toLocaleString()}</td>
                     <td><span class="badge badge-primary">${(a.classification || 'new').toUpperCase()}</span></td>
                     <td><span class="badge badge-active">ACTIVE</span></td>
                     <td>
-                        <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openPointsUpdateModal(${a.id}, '${escapeHtml(a.email)}', ${a.current_points})">
-                            <i class="fa-solid fa-pen-to-square"></i> Update Points
-                        </button>
+                        <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                            <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openAccountDetailsPage(${a.id})">
+                                <i class="fa-solid fa-circle-info"></i> Details
+                            </button>
+                            <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openPointsUpdateModal(${a.id}, '${escapeHtml(a.email)}', ${a.current_points})">
+                                <i class="fa-solid fa-bolt"></i> Update Points
+                            </button>
+                        </div>
                     </td>
                 </tr>
             `).join('');
@@ -1361,7 +1910,7 @@ function filterUserActiveTable() {
 
     const bannedBody = document.getElementById('user-banned-accounts-body');
     if (bannedBody) {
-        bannedBody.innerHTML = bannedList.length === 0 ? '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No banned accounts.</td></tr>' :
+        bannedBody.innerHTML = bannedList.length === 0 ? '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No banned accounts.</td></tr>' :
             bannedList.map(a => `
                 <tr>
                     <td><strong>P${a.profile_no || '-'}</strong></td>
@@ -1369,9 +1918,17 @@ function filterUserActiveTable() {
                     <td class="text-secondary">${a.server || '-'}</td>
                     <td>${a.current_points.toLocaleString()}</td>
                     <td><span class="badge badge-banned">BANNED</span></td>
+                    <td>
+                        <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openAccountDetailsPage(${a.id})">
+                            <i class="fa-solid fa-circle-info"></i> Details
+                        </button>
+                    </td>
                 </tr>
             `).join('');
     }
+
+    renderUserClassifiedAccounts('old');
+}
 
     renderUserClassifiedAccounts('old');
 }

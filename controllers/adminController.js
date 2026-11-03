@@ -778,6 +778,177 @@ const assignAccountsToUser = async (req, res) => {
     }
 };
 
+// Get global and user-specific editing periods
+const getEditingPeriodConfig = async (req, res) => {
+    try {
+        const queryUserId = req.query.userId ? parseInt(req.query.userId) : null;
+        if (queryUserId) {
+            let userConfig = await get(`SELECT * FROM user_editing_periods WHERE user_id = ?`, [queryUserId]);
+            if (!userConfig) {
+                userConfig = await get(`SELECT * FROM user_editing_periods WHERE user_id = 0 OR user_id IS NULL`);
+            }
+            if (userConfig) {
+                return res.json({
+                    ...userConfig,
+                    enabled: Boolean(userConfig.is_enabled),
+                    duration_value: userConfig.duration,
+                    duration_unit: userConfig.unit,
+                    apply_to_add: Boolean(userConfig.allow_add),
+                    apply_to_edit: Boolean(userConfig.allow_edit)
+                });
+            }
+        }
+
+        const globalConfig = await get(`SELECT * FROM user_editing_periods WHERE user_id = 0 OR user_id IS NULL`);
+        const userConfigs = await all(
+            `SELECT p.*, u.name as user_name, u.email as user_email, u.approved_at, u.created_at
+             FROM user_editing_periods p
+             JOIN app_users u ON p.user_id = u.id
+             WHERE p.user_id > 0`
+        );
+
+        res.json({
+            global: globalConfig || { is_enabled: 1, duration: 7, unit: 'days', start_event: 'user_approval', allow_add: 1, allow_edit: 1 },
+            users: userConfigs || [],
+            ...(globalConfig ? {
+                enabled: Boolean(globalConfig.is_enabled),
+                duration_value: globalConfig.duration,
+                duration_unit: globalConfig.unit,
+                apply_to_add: Boolean(globalConfig.allow_add),
+                apply_to_edit: Boolean(globalConfig.allow_edit)
+            } : {})
+        });
+    } catch (error) {
+        console.error('Editing config error:', error);
+        res.status(500).json({ error: 'Failed to fetch editing configurations' });
+    }
+};
+
+// Configure global or user-specific editing period
+const saveEditingPeriodConfig = async (req, res) => {
+    const userId = req.body.userId;
+    const isEnabled = (req.body.enabled !== undefined) ? req.body.enabled : (req.body.isEnabled !== undefined ? req.body.isEnabled : true);
+    const duration = (req.body.durationValue !== undefined) ? req.body.durationValue : (req.body.duration || 7);
+    const unit = req.body.durationUnit || req.body.unit || 'days';
+    const startEvent = req.body.startEvent || 'user_approval';
+    const allowAdd = (req.body.applyToAdd !== undefined) ? req.body.applyToAdd : (req.body.allowAdd !== undefined ? req.body.allowAdd : true);
+    const allowEdit = (req.body.applyToEdit !== undefined) ? req.body.applyToEdit : (req.body.allowEdit !== undefined ? req.body.allowEdit : true);
+    const customExpiresAt = req.body.customExpiresAt || null;
+    const targetUserId = (userId !== undefined && userId !== null && userId !== '') ? parseInt(userId) : 0;
+
+    try {
+        await run(
+            `INSERT INTO user_editing_periods (user_id, is_enabled, duration, unit, start_event, allow_add, allow_edit, custom_expires_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(user_id) DO UPDATE SET
+                is_enabled = excluded.is_enabled,
+                duration = excluded.duration,
+                unit = excluded.unit,
+                start_event = excluded.start_event,
+                allow_add = excluded.allow_add,
+                allow_edit = excluded.allow_edit,
+                custom_expires_at = excluded.custom_expires_at,
+                updated_at = datetime('now')`,
+            [
+                targetUserId,
+                isEnabled ? 1 : 0,
+                parseInt(duration) || 7,
+                unit || 'days',
+                startEvent,
+                allowAdd ? 1 : 0,
+                allowEdit ? 1 : 0,
+                customExpiresAt || null
+            ]
+        );
+
+        // Audit log
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, new_value, result)
+             VALUES (?, ?, 'admin', ?, 'Configured Editing Period', ?, 'success')`,
+            [req.user.id, req.user.email, targetUserId, JSON.stringify(req.body)]
+        );
+
+        res.json({ success: true, message: 'Editing period settings saved successfully' });
+    } catch (error) {
+        console.error('Save editing config error:', error);
+        res.status(500).json({ error: 'Failed to save editing period configuration' });
+    }
+};
+
+// Review Account Correction Request (Approve or Reject)
+const reviewAccountCorrectionRequest = async (req, res) => {
+    const { requestId, action, adminNotes, applyChanges, tempWindowHours } = req.body; // action: 'approve' | 'reject'
+
+    try {
+        const reqRow = await get(`SELECT * FROM user_requests WHERE request_id = ?`, [requestId]);
+        if (!reqRow) return res.status(404).json({ error: 'Request not found' });
+
+        const now = new Date().toISOString();
+        const newStatus = action === 'approve' ? 'Approved' : 'Rejected';
+
+        await run(
+            `UPDATE user_requests SET status = ?, admin_response = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`,
+            [newStatus, adminNotes || '', req.user.id, now, now, reqRow.id]
+        );
+
+        let details = {};
+        try { details = JSON.parse(reqRow.details || '{}'); } catch (e) {}
+
+        // If approved and applyChanges is true, apply directly to Supabase Users
+        if (action === 'approve' && applyChanges && reqRow.account_id && details.newInformation) {
+            try {
+                const parsedUpdates = typeof details.newInformation === 'object' ? details.newInformation : JSON.parse(details.newInformation);
+                await supabase.from('Users').update(parsedUpdates).eq('id', reqRow.account_id);
+            } catch (e) {
+                console.warn('Auto-apply correction warning:', e.message);
+            }
+        }
+
+        // If approved and tempWindowHours provided, grant temporary window for editing
+        if (action === 'approve' && tempWindowHours) {
+            const start = new Date().toISOString();
+            const end = new Date(Date.now() + parseInt(tempWindowHours) * 3600 * 1000).toISOString();
+            await run(
+                `INSERT INTO temporary_access_windows (user_id, start_time, end_time, permitted_actions, is_active, created_by)
+                 VALUES (?, ?, ?, '["edit_accounts"]', 1, ?)`,
+                [reqRow.user_id, start, end, req.user.id]
+            );
+        }
+
+        // Log in account activity
+        if (reqRow.account_id) {
+            await run(
+                `INSERT INTO account_activity_logs (account_id, actor_id, actor_name, actor_role, action_type, description, new_data)
+                 VALUES (?, ?, ?, 'admin', 'correction_approved', ?, ?)`,
+                [
+                    reqRow.account_id,
+                    req.user.id,
+                    req.user.name,
+                    `Correction request ${action === 'approve' ? 'Approved' : 'Rejected'} by administrator. ${adminNotes || ''}`,
+                    JSON.stringify({ action, adminNotes })
+                ]
+            );
+        }
+
+        // Notify User
+        await run(
+            `INSERT INTO notifications (recipient_role, recipient_id, category, title, message, reference_id)
+             VALUES ('user', ?, 'request_reply', ?, ?, ?)`,
+            [
+                reqRow.user_id,
+                `Correction Request ${newStatus}`,
+                `Your correction request for ${reqRow.subject} has been ${newStatus.toLowerCase()}. ${adminNotes || ''}`,
+                requestId
+            ]
+        );
+
+        res.json({ success: true, message: `Request ${newStatus} successfully` });
+    } catch (error) {
+        console.error('Review correction error:', error);
+        res.status(500).json({ error: 'Failed to review request' });
+    }
+};
+
 module.exports = {
     setIo,
     getDashboardOverview,
@@ -795,5 +966,8 @@ module.exports = {
     getNotifications,
     markNotificationRead,
     getAuditLogs,
-    assignAccountsToUser
+    assignAccountsToUser,
+    getEditingPeriodConfig,
+    saveEditingPeriodConfig,
+    reviewAccountCorrectionRequest
 };

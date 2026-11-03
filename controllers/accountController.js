@@ -3,7 +3,7 @@ const xlsx = require('xlsx');
 const { Parser } = require('json2csv');
 const PDFDocument = require('pdfkit-table');
 const supabase = require('../db/supabase');
-const { run, get, all } = require('../db/database');
+const { run, get, all, getUserEditingPeriodStatus } = require('../db/database');
 
 let io;
 const setIo = (socketIoInstance) => {
@@ -134,12 +134,146 @@ const getAccounts = async (req, res) => {
     }
 };
 
-// Create Account (Admin or user with add_accounts permission)
+// Check current user editing status & remaining period
+const getEditingStatus = async (req, res) => {
+    try {
+        const status = await getUserEditingPeriodStatus(req.user.id);
+        res.json({
+            ...status,
+            canAddAccounts: status.canAdd,
+            canEditAccounts: status.canEdit,
+            canImportExcel: status.canAdd,
+            isWithinWindow: status.isFreePeriodActive,
+            statusText: status.isFreePeriodActive ? `Free Editing Active (${status.remainingFormatted})` : 'Free Editing Period Expired',
+            badgeClass: status.isFreePeriodActive ? 'badge-active' : 'badge-pending'
+        });
+    } catch (error) {
+        console.error('Editing status error:', error);
+        res.status(500).json({ error: 'Failed to retrieve editing status' });
+    }
+};
+
+// Dedicated Account Details (ONLY account info: overview, credentials, activity; NO points, NO redemptions)
+const getAccountDetails = async (req, res) => {
+    const accountId = req.params.id;
+    const user = req.user;
+
+    try {
+        const { data: account, error: accErr } = await supabase
+            .from('Users')
+            .select('id, profile_no, email, server, proton_email, status, notes, alternative_email')
+            .eq('id', accountId)
+            .single();
+
+        if (accErr || !account) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+
+        const meta = await get(`SELECT user_id, classification, updated_at FROM account_metadata WHERE account_id = ?`, [accountId]);
+        const adminRow = await get(`SELECT id, name, email FROM app_users WHERE role = 'admin' LIMIT 1`);
+        const defaultAdminId = adminRow ? adminRow.id : 1;
+        const ownerId = meta ? meta.user_id : defaultAdminId;
+
+        // Strict isolation check: non-admins can only see their own accounts
+        if (user.role !== 'admin' && ownerId !== user.id) {
+            return res.status(403).json({ error: 'Access denied. You do not have permission to view this account.' });
+        }
+
+        // Fetch activity logs (administrative modifications only - NO points, NO redemptions)
+        const activityLogs = await all(
+            `SELECT id, actor_id, actor_name, actor_role, action_type, description, previous_data, new_data, created_at 
+             FROM account_activity_logs 
+             WHERE account_id = ? 
+             ORDER BY id DESC`,
+            [accountId]
+        );
+
+        // Fetch user editing status
+        const editingStatus = await getUserEditingPeriodStatus(user.id);
+        const canEdit = (user.role === 'admin') || (editingStatus.canEdit && ownerId === user.id);
+
+        let owner = null;
+        if (ownerId) {
+            const ownerRow = await get(`SELECT id, name, email FROM app_users WHERE id = ?`, [ownerId]);
+            if (ownerRow) owner = ownerRow;
+        }
+
+        res.json({
+            success: true,
+            account: {
+                id: account.id,
+                profile_no: account.profile_no,
+                email: account.email,
+                status: account.status || 'active',
+                classification: meta ? meta.classification : 'new',
+                server: account.server || '',
+                recovery_email: account.alternative_email || '',
+                alternative_email: account.alternative_email || '',
+                proton_email: account.proton_email || '',
+                notes: account.notes || '',
+                user_id: ownerId,
+                owner,
+                createdAt: meta ? meta.updated_at : null,
+                registeredAt: meta ? meta.updated_at : null,
+                lastUpdated: meta ? meta.updated_at : null,
+                overview: {
+                    id: account.id,
+                    profile_no: account.profile_no,
+                    email: account.email,
+                    status: account.status || 'active',
+                    classification: meta ? meta.classification : 'new',
+                    registered_at: meta ? meta.updated_at : null,
+                    last_updated: meta ? meta.updated_at : null,
+                    notes: account.notes || '',
+                    owner_id: ownerId
+                },
+                credentials: {
+                    email: account.email,
+                    alternative_email: account.alternative_email || '',
+                    recovery_email: account.alternative_email || '',
+                    proton_email: account.proton_email || '',
+                    server: account.server || '',
+                    notes: account.notes || ''
+                }
+            },
+            activityLogs,
+            activity: activityLogs,
+            editingStatus: {
+                canEdit,
+                canAdd: editingStatus.canAdd,
+                isFreePeriodActive: editingStatus.isFreePeriodActive,
+                isWithinWindow: editingStatus.isFreePeriodActive,
+                remainingFormatted: editingStatus.remainingFormatted,
+                statusText: editingStatus.isFreePeriodActive ? `Free Editing Active (${editingStatus.remainingFormatted})` : 'Free Editing Period Expired',
+                expiresAt: editingStatus.expiresAt
+            },
+            isAdmin: user.role === 'admin'
+        });
+
+    } catch (error) {
+        console.error('Account Details Error:', error);
+        res.status(500).json({ error: 'Failed to fetch account details' });
+    }
+};
+
+// Create Account (Admin or user within free editing period / with add_accounts permission)
 const createAccount = async (req, res) => {
     const user = req.user;
     const { profile_no, email, server, proton_email, status, notes, alternative_email, initial_points, classification } = req.body;
 
     if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    // Enforce editing period restriction on backend
+    if (user.role !== 'admin') {
+        const editStatus = await getUserEditingPeriodStatus(user.id);
+        const hasAddPerm = user.permissions && user.permissions.includes('add_accounts');
+        if (!hasAddPerm && !editStatus.canAdd) {
+            return res.status(403).json({ 
+                error: 'Account addition is locked. Your free editing period has expired. Please submit an access request to the administrator.',
+                code: 'EDITING_EXPIRED'
+            });
+        }
+    }
 
     try {
         let assignedUserId = user.id;
@@ -188,6 +322,13 @@ const createAccount = async (req, res) => {
             [newAcc.id, assignedUserId, finalClass]
         );
 
+        // Record creation in dedicated account activity log
+        await run(
+            `INSERT INTO account_activity_logs (account_id, actor_id, actor_name, actor_role, action_type, description, new_data)
+             VALUES (?, ?, ?, ?, 'created', 'Account profile created', ?)`,
+            [newAcc.id, user.id, user.name, user.role, JSON.stringify({ email, profile_no: finalProfileNo, server })]
+        );
+
         // Insert initial points if provided
         if (initial_points !== undefined && initial_points !== null) {
             await supabase.from('Points').insert([{
@@ -211,7 +352,7 @@ const createAccount = async (req, res) => {
             [user.id, user.email, user.role, assignedUserId, JSON.stringify({ email, profile_no: finalProfileNo }), String(newAcc.id)]
         );
 
-        res.json({
+        res.status(201).json({
             success: true,
             account: {
                 ...newAcc,
@@ -225,7 +366,7 @@ const createAccount = async (req, res) => {
     }
 };
 
-// Update Account Details (Admin or user with edit_accounts permission)
+// Update Account Details (Admin or user within free editing period / with edit_accounts permission)
 const updateAccount = async (req, res) => {
     const accountId = req.params.id;
     const user = req.user;
@@ -247,6 +388,18 @@ const updateAccount = async (req, res) => {
 
         if (user.role !== 'admin' && ownerId !== user.id) {
             return res.status(403).json({ error: 'Access denied. You do not own this account.' });
+        }
+
+        // Enforce editing period restriction on backend
+        if (user.role !== 'admin') {
+            const editStatus = await getUserEditingPeriodStatus(user.id);
+            const hasEditPerm = user.permissions && user.permissions.includes('edit_accounts');
+            if (!hasEditPerm && !editStatus.canEdit) {
+                return res.status(403).json({ 
+                    error: 'Account editing is locked. Your free editing period has expired. Please submit a correction request to the administrator.',
+                    code: 'EDITING_EXPIRED'
+                });
+            }
         }
 
         const updates = {};
@@ -271,7 +424,20 @@ const updateAccount = async (req, res) => {
                  ON CONFLICT(account_id) DO UPDATE SET classification = excluded.classification, updated_at = datetime('now')`,
                 [accountId, ownerId, classification]
             );
+
+            await run(
+                `INSERT INTO account_activity_logs (account_id, actor_id, actor_name, actor_role, action_type, description, previous_data, new_data)
+                 VALUES (?, ?, ?, 'admin', 'classification_changed', ?, ?, ?)`,
+                [accountId, user.id, user.name, `Classification changed to ${classification}`, meta ? meta.classification : 'new', classification]
+            );
         }
+
+        // Record modification in account activity log
+        await run(
+            `INSERT INTO account_activity_logs (account_id, actor_id, actor_name, actor_role, action_type, description, previous_data, new_data)
+             VALUES (?, ?, ?, ?, 'updated', 'Account information modified', ?, ?)`,
+            [accountId, user.id, user.name, user.role, JSON.stringify(existing), JSON.stringify(updates)]
+        );
 
         await run(
             `INSERT INTO audit_logs (actor_id, actor_email, actor_role, action, previous_value, new_value, record_id, result)
@@ -283,6 +449,108 @@ const updateAccount = async (req, res) => {
     } catch (error) {
         console.error('Update Account Error:', error);
         res.status(500).json({ error: 'Error updating account' });
+    }
+};
+
+// Submit Account Correction Request (when free editing period is expired)
+const submitAccountCorrectionRequest = async (req, res) => {
+    const accountId = req.params.id;
+    const user = req.user;
+    const requestedModification = req.body.requestedModification || req.body.fieldName;
+    const previousInformation = req.body.previousInformation || req.body.previousValue || '';
+    const newInformation = req.body.newInformation || req.body.newValue || '';
+    const reason = req.body.reason;
+    const additionalMessage = req.body.additionalMessage || '';
+
+    if (!requestedModification || !reason) {
+        return res.status(400).json({ error: 'Requested modification and reason are required' });
+    }
+
+    try {
+        const { data: account, error: accErr } = await supabase
+            .from('Users')
+            .select('id, profile_no, email')
+            .eq('id', accountId)
+            .single();
+
+        if (accErr || !account) return res.status(404).json({ error: 'Account not found' });
+
+        const meta = await get(`SELECT user_id FROM account_metadata WHERE account_id = ?`, [accountId]);
+        const adminRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
+        const defaultAdminId = adminRow ? adminRow.id : 1;
+        const ownerId = meta ? meta.user_id : defaultAdminId;
+
+        if (user.role !== 'admin' && ownerId !== user.id) {
+            return res.status(403).json({ error: 'Access denied. You do not own this account.' });
+        }
+
+        const requestId = `REQ-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+        const subject = `Account Correction: P${account.profile_no} (${account.email})`;
+
+        await run(
+            `INSERT INTO user_requests (request_id, user_id, category, subject, message, account_id, details, status)
+             VALUES (?, ?, 'account_correction', ?, ?, ?, ?, 'Pending')`,
+            [
+                requestId,
+                user.id,
+                subject,
+                reason,
+                accountId,
+                JSON.stringify({
+                    profile_no: account.profile_no,
+                    email: account.email,
+                    requestedModification,
+                    previousInformation: previousInformation || '',
+                    newInformation: newInformation || '',
+                    additionalMessage: additionalMessage || ''
+                })
+            ]
+        );
+
+        // Log in account activity
+        await run(
+            `INSERT INTO account_activity_logs (account_id, actor_id, actor_name, actor_role, action_type, description, previous_data, new_data)
+             VALUES (?, ?, ?, ?, 'correction_requested', ?, ?, ?)`,
+            [
+                accountId,
+                user.id,
+                user.name,
+                user.role,
+                `Correction requested: ${requestedModification}`,
+                typeof previousInformation === 'object' ? JSON.stringify(previousInformation) : String(previousInformation || ''),
+                typeof newInformation === 'object' ? JSON.stringify(newInformation) : String(newInformation || '')
+            ]
+        );
+
+        // Notify Admin
+        await run(
+            `INSERT INTO notifications (recipient_role, category, title, message, reference_id, data)
+             VALUES ('admin', 'account_correction', 'Account Correction Request', ?, ?, ?)`,
+            [
+                `User ${user.name} submitted a correction request for P${account.profile_no} (${account.email})`,
+                requestId,
+                JSON.stringify({ requestId, userId: user.id, accountId, requestedModification })
+            ]
+        );
+
+        if (io) {
+            io.emit('new_admin_request', {
+                requestId,
+                category: 'Account Correction',
+                user: { id: user.id, name: user.name, email: user.email },
+                subject
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Account correction request submitted to the administrator',
+            requestId
+        });
+
+    } catch (error) {
+        console.error('Correction Request Error:', error);
+        res.status(500).json({ error: 'Failed to submit correction request' });
     }
 };
 
@@ -358,10 +626,22 @@ const updatePoints = async (req, res) => {
     }
 };
 
-// Excel Upload (Admin or user with import_excel permission)
+// Excel Upload (Admin or user within free editing period / with import_excel permission)
 const uploadExcel = async (req, res) => {
     const user = req.user;
     const isFresh = req.body.freshUpload === 'true';
+
+    // Enforce editing period restriction on backend
+    if (user.role !== 'admin') {
+        const editStatus = await getUserEditingPeriodStatus(user.id);
+        const hasImportPerm = user.permissions && user.permissions.includes('import_excel');
+        if (!hasImportPerm && !editStatus.canAdd) {
+            return res.status(403).json({ 
+                error: 'Account addition & spreadsheet import is locked. Your free editing period has expired. Please submit an access request to the administrator.',
+                code: 'EDITING_EXPIRED'
+            });
+        }
+    }
 
     try {
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -454,6 +734,13 @@ const uploadExcel = async (req, res) => {
                 [accountId, targetUserId]
             );
 
+            // Log activity
+            await run(
+                `INSERT INTO account_activity_logs (account_id, actor_id, actor_name, actor_role, action_type, description, new_data)
+                 VALUES (?, ?, ?, ?, 'created', 'Account registered via spreadsheet upload', ?)`,
+                [accountId, user.id, user.name, user.role, JSON.stringify({ email, profile_no: profileNo })]
+            );
+
             syncedCount++;
 
             // Process Points Columns
@@ -540,8 +827,11 @@ const exportCsv = async (req, res) => {
 module.exports = {
     setIo,
     getAccounts,
+    getEditingStatus,
+    getAccountDetails,
     createAccount,
     updateAccount,
+    submitAccountCorrectionRequest,
     updatePoints,
     uploadExcel,
     exportCsv

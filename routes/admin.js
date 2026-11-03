@@ -9,7 +9,7 @@ router.use(authenticateToken, requireAdmin);
 // Dashboard overview & KPIs
 router.get('/overview', adminController.getDashboardOverview);
 
-// User management
+// User management & Editing periods
 router.get('/users', adminController.listUsers);
 router.get('/users/:id', adminController.getUserDetails);
 router.post('/users/:id/status', adminController.updateUserStatus);
@@ -18,6 +18,9 @@ router.post('/users/:id/permissions', adminController.updateUserPermissions);
 router.post('/users/:id/temporary-window', adminController.createTemporaryAccessWindow);
 router.post('/users/:id/rewards-visibility', adminController.setUserRewardVisibility);
 router.post('/users/:id/assign-accounts', adminController.assignAccountsToUser);
+router.get('/editing-periods', adminController.getEditingPeriodConfig);
+router.post('/editing-periods', adminController.saveEditingPeriodConfig);
+router.post('/accounts/correction-review', adminController.reviewAccountCorrectionRequest);
 
 // Old / New classification
 router.post('/accounts/reclassify', adminController.reclassifyAccounts);

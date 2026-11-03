@@ -198,7 +198,7 @@ async function runTests() {
                 classification: 'new'
             }
         });
-        assert.strictEqual(createRes.status, 200);
+        assert(createRes.status === 200 || createRes.status === 201, 'Account creation should return 200 or 201');
         testAccId = createRes.body.account.id;
 
         // User queries accounts
@@ -219,7 +219,13 @@ async function runTests() {
     });
 
     await test('User cannot access another user or admin account (403 forbidden)', async () => {
-        const forbiddenRes = await api(`/api/accounts/1`, {
+        const allAccRes = await api('/api/accounts', {
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        const otherAcc = allAccRes.body.find(a => a.user_id !== testUserId);
+        assert(otherAcc, 'Must have an account belonging to admin/other');
+
+        const forbiddenRes = await api(`/api/accounts/${otherAcc.id}`, {
             method: 'PUT',
             headers: { 'Authorization': `Bearer ${testUserToken}` },
             body: { email: 'hacked@gmail.com' }
@@ -323,6 +329,113 @@ async function runTests() {
         const admins = await all(`SELECT * FROM app_users WHERE role = 'admin'`);
         assert.strictEqual(admins.length, 1, 'Exactly ONE administrator must exist');
         assert.strictEqual(admins[0].email, ADMIN_EMAIL, `Sole administrator must be ${ADMIN_EMAIL}`);
+    });
+
+    console.log('\n--- SUITE 9: DEDICATED ACCOUNT DETAILS & FREE EDITING PERIOD ---');
+
+    let createdAccId = null;
+
+    await test('User checks free editing period status (active upon approval)', async () => {
+        const res = await api('/api/accounts/editing-status', {
+            headers: { 'Authorization': `Bearer ${testUserToken}` }
+        });
+        assert.strictEqual(res.status, 200);
+        assert.strictEqual(res.body.isWithinWindow, true);
+        assert.strictEqual(res.body.canAddAccounts, true);
+        assert.strictEqual(res.body.canEditAccounts, true);
+    });
+
+    await test('User adds an account during active free editing period', async () => {
+        const res = await api('/api/accounts', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${testUserToken}` },
+            body: {
+                email: `user_device_${Date.now()}@domain.com`,
+                server: 'US-TX#999',
+                classification: 'new',
+                status: 'active',
+                notes: 'Automated test account'
+            }
+        });
+        assert.strictEqual(res.status, 201, 'User should be allowed to create account during free window');
+        assert(res.body.account && res.body.account.id);
+        createdAccId = res.body.account.id;
+    });
+
+    await test('Dedicated Account Details page contains Overview, Credentials, Activity (NO passwords, NO points)', async () => {
+        const res = await api(`/api/accounts/${createdAccId}/details`, {
+            headers: { 'Authorization': `Bearer ${testUserToken}` }
+        });
+        assert.strictEqual(res.status, 200);
+        const data = res.body;
+
+        // Section A: Account Overview
+        assert(data.account, 'Must have account overview');
+        assert(data.account.email, 'Must have email');
+        assert.strictEqual(data.account.status, 'active');
+        assert.strictEqual(data.account.classification, 'new');
+
+        // Section B: Account Credentials & Info (STRICT SECURITY CHECK)
+        assert.strictEqual(data.account.password, undefined, 'CRITICAL: Account password must NOT be in details');
+        assert.strictEqual(data.account.hashed_password, undefined, 'CRITICAL: Hashed password must NOT be in details');
+        assert.strictEqual(data.account.passwords, undefined, 'CRITICAL: Passwords field must NOT exist');
+
+        // Section C: Account Activity (NO points, NO redemptions)
+        assert.strictEqual(data.points, undefined, 'CRITICAL: Points must NOT be displayed in Account Details');
+        assert.strictEqual(data.pointsHistory, undefined, 'CRITICAL: Points history must NOT be in Account Details');
+        assert.strictEqual(data.redemptions, undefined, 'CRITICAL: Redemptions must NOT be in Account Details');
+        assert(Array.isArray(data.activityLogs), 'Activity logs must be an array');
+        assert(data.activityLogs.length >= 1, 'Account creation must be logged in activity logs');
+        assert.strictEqual(data.activityLogs[0].action_type.toLowerCase(), 'created');
+    });
+
+    await test('User submits Account Correction Request', async () => {
+        const res = await api(`/api/accounts/${createdAccId}/correction-request`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${testUserToken}` },
+            body: {
+                fieldName: 'Server',
+                previousValue: 'US-TX#999',
+                newValue: 'US-CA#100',
+                reason: 'Data center migration'
+            }
+        });
+        assert.strictEqual(res.status, 200);
+        assert.strictEqual(res.body.success, true);
+
+        // Verify request logged in activity logs
+        const detailsRes = await api(`/api/accounts/${createdAccId}/details`, {
+            headers: { 'Authorization': `Bearer ${testUserToken}` }
+        });
+        const hasCorrectionLog = detailsRes.body.activityLogs.some(l => l.action_type.toLowerCase().includes('correction'));
+        assert(hasCorrectionLog, 'Correction request must be logged in activity logs');
+    });
+
+    await test('Administrator reviews and configures editing period settings', async () => {
+        // Save editing period configuration
+        const saveRes = await api('/api/admin/editing-periods', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${adminToken}` },
+            body: {
+                userId: testUserId,
+                enabled: true,
+                durationValue: 14,
+                durationUnit: 'days',
+                startEvent: 'user_approval',
+                applyToAdd: true,
+                applyToEdit: true
+            }
+        });
+        assert.strictEqual(saveRes.status, 200);
+        assert.strictEqual(saveRes.body.success, true);
+
+        // Verify configuration retrieval
+        const getRes = await api(`/api/admin/editing-periods?userId=${testUserId}`, {
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        assert.strictEqual(getRes.status, 200);
+        assert.strictEqual(getRes.body.duration_value, 14);
+        assert.strictEqual(getRes.body.duration_unit, 'days');
     });
 
     // Close test server
