@@ -131,6 +131,11 @@ async function initSchema() {
         await run(`ALTER TABLE app_users ADD COLUMN password_hash TEXT`);
     } catch (e) {}
 
+    // Ensure review_form_required column exists (0 = normal dashboard, 1 = admin sent form, dashboard blocked until submit)
+    try {
+        await run(`ALTER TABLE app_users ADD COLUMN review_form_required INTEGER DEFAULT 0`);
+    } catch (e) {}
+
     await run(`
         CREATE TABLE IF NOT EXISTS rewards_catalog (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

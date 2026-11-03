@@ -689,14 +689,44 @@
                 <!-- VIEW: MONTHLY REVIEWS & FORMS (ADMIN) -->
                 <div id="page-admin-forms" class="page-pane hidden">
                     <div class="table-card" style="padding: 1.5rem; margin-bottom: 2rem;">
-                        <h4 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;"><i class="fa-solid fa-calendar-check"></i> Monthly Review Schedule</h4>
-                        <p class="text-secondary" style="font-size: 0.88rem; margin-bottom: 1.5rem;">Configure the mandatory periodic form required from approved users to maintain dashboard access.</p>
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
+                            <div>
+                                <h4 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.25rem;"><i class="fa-solid fa-calendar-check" style="color: var(--primary-color);"></i> Periodic Account & Rewards Review</h4>
+                                <p class="text-secondary" style="font-size: 0.88rem; margin: 0;">Admin controls when to send this review form to operators. When sent, the operator's dashboard will stop displaying until they submit.</p>
+                            </div>
+                            <button class="btn warning-btn" onclick="adminSendReviewFormToAll()" title="Send the review form to all approved operators and lock their dashboards until submitted">
+                                <i class="fa-solid fa-paper-plane"></i> Send Form to All Operators
+                            </button>
+                        </div>
                         <div id="admin-form-schedule-card"></div>
+                    </div>
+
+                    <!-- Operator Review Dispatch & Dashboard Lock Status -->
+                    <div class="table-card" style="margin-bottom: 2rem;">
+                        <div class="table-header-bar" style="display: flex; justify-content: space-between; align-items: center;">
+                            <h4 style="font-size: 1.05rem; font-weight: 700;"><i class="fa-solid fa-users-gear"></i> Operator Review Dispatch & Dashboard Status</h4>
+                            <span class="text-secondary" style="font-size: 0.82rem;">Only users with 'Review Sent' have their dashboard blocked</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="modern-table">
+                                <thead>
+                                    <tr>
+                                        <th>Operator</th>
+                                        <th>Dashboard Status</th>
+                                        <th>Last Submission</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-form-operators-body">
+                                    <tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Loading operator review statuses...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
                     <div class="table-card">
                         <div class="table-header-bar">
-                            <h4 style="font-size: 1.1rem; font-weight: 700;"><i class="fa-solid fa-list-check"></i> User Review Submissions</h4>
+                            <h4 style="font-size: 1.05rem; font-weight: 700;"><i class="fa-solid fa-list-check"></i> User Review Submissions History</h4>
                         </div>
                         <div class="table-responsive">
                             <table class="modern-table">
@@ -1636,8 +1666,8 @@
                     <h3>6. Reward Catalogue & Redemptions</h3>
                     <p>Navigate to <strong>Available Rewards</strong> to view current incentives, gift cards, and vouchers. When your accumulated points reach the required threshold, click <strong>Redeem Reward</strong> to submit your claim for administrative fulfillment.</p>
 
-                    <h3>7. Monthly Review Forms</h3>
-                    <p>At the start of each month, PointPulse prompts operators to submit a brief monthly review to confirm active accounts, flag any suspended profiles, and ensure compliance.</p>
+                    <h3>7. Periodic Review Forms (Admin Dispatched)</h3>
+                    <p>The Periodic Review Form only appears when specifically dispatched by the Administrator to you. When sent, your dashboard will temporarily stop displaying and present the review form. Once you complete and submit the review, your access is unlocked and your dashboard resumes immediately.</p>
                 </div>
 
                 <!-- TAB 2: ADMINISTRATOR MANUAL -->
@@ -1656,6 +1686,7 @@
                         <li><strong>Pending Approvals:</strong> View new operator registrations. Click <strong>Approve</strong> to activate their account and start their default Free Editing Window, or <strong>Reject</strong> to deny.</li>
                         <li><strong>Active Operators:</strong> View all approved operators (such as <code>laptopmew1@gmail.com</code>).</li>
                         <li><strong>Permissions:</strong> Toggle permissions for individual users (e.g. can add accounts, can edit points, can redeem rewards).</li>
+                        <li><strong>Review Form Dispatch:</strong> Click <strong>Send Form</strong> to dispatch the mandatory review form to a user (stops their dashboard until submitted), or <strong>Unlock Form</strong> to cancel.</li>
                         <li><strong>Suspension:</strong> Click <strong>Suspend</strong> on any operator row to instantly revoke access.</li>
                     </ul>
 
@@ -1683,6 +1714,16 @@
                     <p>Navigate to <strong>Reward Catalogue</strong> to create, edit, or publish reward items, set required point thresholds, and manage inventory.</p>
 
                     <h3>7. Notification Center & Correction Approvals</h3>
+                    <p>Navigate to <strong>Notification Center</strong> to review incoming operator requests (Account Corrections, Points Windows, Redemptions). Click <strong>Approve</strong> to apply corrections or open editing windows immediately.</p>
+
+                    <h3>8. Periodic Review Dispatch & Dashboard Gating</h3>
+                    <p>Navigate to <strong>Monthly Reviews</strong> in the sidebar to control review forms:</p>
+                    <ul>
+                        <li><strong>Send to All Operators:</strong> Click <strong>Send Form to All Operators</strong> to lock all dashboards until each operator finishes the review.</li>
+                        <li><strong>Send to Single Operator:</strong> Click <strong>Send Form</strong> on any operator in the dispatch table.</li>
+                        <li><strong>Cancel Requirement:</strong> Click <strong>Cancel & Resume Dashboard</strong> to unlock an operator's dashboard without requiring submission.</li>
+                        <li><strong>Submissions History:</strong> Click <strong>View Answers</strong> to inspect submitted responses.</li>
+                    </ul>
                     <p>Navigate to <strong>Notification Center</strong> to review incoming operator requests (Account Corrections, Points Windows, Redemptions). Click <strong>Approve</strong> to apply corrections or open editing windows immediately.</p>
 
                     <h3>8. Download Center & Executive PDF Generation</h3>

@@ -310,15 +310,12 @@ If you need to adjust points for your accounts:
 
 ---
 
-### 2.10 Mandatory Monthly Review Forms
-At the start of every calendar month:
-1. PointPulse prompts you to complete the **Monthly Performance Review Form**.
-2. Confirm:
-   - Total active accounts in use.
-   - Any banned or compromised accounts needing replacement.
-   - Performance feedback or server issues.
-3. Submit the form.
-4. Completing the review ensures your account remains in good standing and eligible for reward disbursements.
+### 2.10 Periodic Review Forms (Admin Dispatched)
+- The review form does **not** appear automatically or frequently on login or page reloads.
+- It is **only dispatched** when the Administrator specifically chooses to send it to you to finish.
+- **Dashboard Gating**: When the Administrator sends the form, your dashboard will temporarily stop displaying and present the review questions.
+- **Verification Questions**: Confirm that your account records and points balances are up to date.
+- **Submit to Resume**: Once you submit the form, your requirement is marked satisfied and your dashboard access **resumes immediately**.
 
 ---
 
@@ -476,10 +473,13 @@ Navigate to **`Notification Center`**:
 
 ---
 
-### 3.10 Monthly Reviews Compliance Oversight
-Navigate to **`Monthly Reviews`**:
-- Monitor which operators have submitted their monthly performance reviews.
-- Review submitted operational feedback, banned account tallies, and operator reports.
+### 3.10 Periodic Review Dispatch & Dashboard Gating
+Navigate to **`Monthly Reviews`** (or **`User Management`**):
+- **Send Form to Single Operator**: Click **`Send Form`** next to any operator. Their dashboard will stop displaying immediately and show the review form until submitted.
+- **Send Form to All Operators**: Click **`Send Form to All Operators`** to require a platform-wide review.
+- **Cancel Requirement**: Click **`Cancel & Resume Dashboard`** to lift the gating requirement without a submission.
+- **Automatic Dashboard Resumption**: As soon as the operator submits the form, their dashboard access resumes automatically.
+- **Review Submissions**: Inspect submitted operational feedback, account tallies, and notes under Review Submissions History.
 
 ---
 
@@ -541,3 +541,4 @@ To ensure Google authentication functions properly:
 ---
 
 *PointPulse Enterprise Platform • Developed for Secure Performance & Rewards Management*
+

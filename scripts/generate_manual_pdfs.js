@@ -375,12 +375,12 @@ async function generateOperatorManual() {
     addBullet(doc, '4. Fulfillment:', 'Redemption claims appear in your Request Center. The Administrator approves and fulfills the voucher.');
 
     // Section 9: Monthly Reviews & Exporting
-    addSectionHeader(doc, 9, 'Monthly Compliance Reviews & Report Exports');
-    addSubHeader(doc, 'Monthly Performance Review Form');
-    addParagraph(doc, 'On the 1st of every month, PointPulse prompts operators to submit a standard operational review:');
-    addBullet(doc, 'Verification:', 'Confirm the total number of active profiles currently operating.');
-    addBullet(doc, 'Banned Profiles:', 'Report any accounts flagged or terminated by external platforms.');
-    addBullet(doc, 'Feedback:', 'Submit operational notes or server performance comments.');
+    addSectionHeader(doc, 9, 'Periodic Reviews & Report Exports');
+    addSubHeader(doc, 'Periodic Review Form (Admin Dispatched)');
+    addParagraph(doc, 'The Periodic Review Form does NOT pop up automatically or frequently. It is only dispatched when the Administrator specifically sends it to you to finish:');
+    addBullet(doc, 'Dashboard Gate:', 'When the Administrator sends the form, your dashboard temporarily stops displaying and presents the review form.');
+    addBullet(doc, 'Verification Questions:', 'Answer the verification questions confirming active accounts, accuracy, and current points.');
+    addBullet(doc, 'Submit to Resume:', 'Click "Submit & Unlock Dashboard". Upon submission, your review state is marked complete and your dashboard immediately resumes displaying normally.');
 
     addSubHeader(doc, 'Exporting Reports');
     addParagraph(doc, 'Navigate to "Download Reports" to export a clean, timestamped CSV spreadsheet of all your assigned accounts, current points balances, and redemption histories.');
@@ -501,20 +501,28 @@ async function generateAdminManual() {
     addBullet(doc, 'Account Correction Requests:', 'Review operator requests to fix server names or account details. Click "Approve" to apply the correction automatically.');
     addBullet(doc, 'Points Window Requests:', 'Review operator requests for editing time. Click "Approve Window" to unlock their countdown timer.');
 
-    // Section 10: Executive PDF Generation
-    addSectionHeader(doc, 10, 'Executive PDF Generation & Download Center');
+    // Section 10: Periodic Review Dispatch
+    addSectionHeader(doc, 10, 'Periodic Review Dispatch & Dashboard Gating');
+    addParagraph(doc, 'The Administrator controls when review forms are dispatched to operators:');
+    addBullet(doc, 'Send Form to User:', 'Under Monthly Reviews or User Management, click "Send Form" on any operator. Their dashboard will stop displaying immediately until they submit the form.');
+    addBullet(doc, 'Send to All Operators:', 'Click "Send Form to All Operators" to require a platform-wide review.');
+    addBullet(doc, 'Cancel Requirement:', 'Click "Cancel & Resume Dashboard" if you wish to lift the requirement without a submission.');
+    addBullet(doc, 'Automatic Resumption:', 'As soon as an operator submits the form, their dashboard access resumes automatically and their answers appear in your submissions history.');
+
+    // Section 11: Executive PDF Generation
+    addSectionHeader(doc, 11, 'Executive PDF Generation & Download Center');
     addParagraph(doc, 'Under "Download Center", generate branded, publication-ready reports:');
     addBullet(doc, 'Executive PDF Report:', 'Produces a multi-page PDF document featuring KPI overview cards, points distribution charts, operator performance summaries, and full account rosters.');
     addBullet(doc, 'Full Database CSV:', 'Exports the raw master database table into a CSV file for backup or external spreadsheet analysis.');
 
-    // Section 11: Immutable Audit Logs
-    addSectionHeader(doc, 11, 'Immutable Security Audit Logs');
+    // Section 12: Immutable Audit Logs
+    addSectionHeader(doc, 12, 'Immutable Security Audit Logs');
     addParagraph(doc, 'Navigate to "Audit Logs" to review the tamper-evident chronological ledger:');
     addBullet(doc, 'Tracked Events:', 'Every login, approval, account creation, edit, bulk migration, points change, and window grant is recorded.');
     addBullet(doc, 'Audit Metadata:', 'Includes exact ISO timestamp, actor email, action type, target account, and IP address.');
 
-    // Section 12: Google Cloud OAuth Setup
-    addSectionHeader(doc, 12, 'Google Cloud OAuth 2.0 Configuration Guide');
+    // Section 13: Google Cloud OAuth Setup
+    addSectionHeader(doc, 13, 'Google Cloud OAuth 2.0 Configuration Guide');
     addParagraph(doc, 'To ensure Google Sign-In operates flawlessly on the live production domain:');
     addBullet(doc, '1. Open Console:', 'Navigate to Google Cloud Console → APIs & Services → Credentials.');
     addBullet(doc, '2. Open Client ID:', 'Select Client ID: 162534616388-ko0lpc0r6cpor5vb8tv23aodamelv9mv.apps.googleusercontent.com');
@@ -544,3 +552,4 @@ run().catch(err => {
     console.error('Error generating PDF manuals:', err);
     process.exit(1);
 });
+

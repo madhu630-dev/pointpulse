@@ -335,27 +335,18 @@ const getMe = async (req, res) => {
         const user = req.user;
         const now = new Date().toISOString();
 
-        // Check if there is a pending mandatory monthly review form for this user
+        // Check if administrator has specifically sent a mandatory review form to this user
         let pendingForm = null;
-        if (user.role === 'user' && user.status === 'approved') {
-            const activeSchedule = await get(`SELECT * FROM form_schedules WHERE is_enabled = 1 LIMIT 1`);
+        if (user.role === 'user' && user.status === 'approved' && user.review_form_required === 1) {
+            const activeSchedule = await get(`SELECT * FROM form_schedules WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1`);
             if (activeSchedule) {
-                // Check if user submitted this form in current month
-                const currentMonthPrefix = now.substring(0, 7); // YYYY-MM
-                const sub = await get(
-                    `SELECT id FROM form_submissions 
-                     WHERE user_id = ? AND form_type = 'periodic_review' AND submitted_at LIKE ?`,
-                    [user.id, `${currentMonthPrefix}%`]
-                );
-                if (!sub) {
-                    pendingForm = {
-                        scheduleId: activeSchedule.id,
-                        title: activeSchedule.title,
-                        type: activeSchedule.type,
-                        deadlineDay: activeSchedule.deadline_day,
-                        questions: JSON.parse(activeSchedule.questions || '[]')
-                    };
-                }
+                pendingForm = {
+                    scheduleId: activeSchedule.id,
+                    title: activeSchedule.title,
+                    type: activeSchedule.type,
+                    deadlineDay: activeSchedule.deadline_day,
+                    questions: JSON.parse(activeSchedule.questions || '[]')
+                };
             }
         }
 
@@ -368,6 +359,7 @@ const getMe = async (req, res) => {
                 role: user.role,
                 status: user.status,
                 display_name: user.display_name,
+                review_form_required: user.review_form_required ? 1 : 0,
                 permissions: user.permissions || [],
                 temporary_actions: user.temporary_actions || [],
                 created_at: user.created_at

@@ -10,6 +10,10 @@ router.post('/submit', authenticateToken, formController.submitPeriodicForm);
 router.get('/submissions', authenticateToken, requireAdmin, formController.getFormSubmissions);
 router.put('/submissions/:id/acknowledge', authenticateToken, requireAdmin, formController.acknowledgeSubmission);
 router.post('/schedule', authenticateToken, requireAdmin, formController.updateSchedule);
+router.post('/send-user', authenticateToken, requireAdmin, formController.sendFormToUser);
+router.post('/send-all', authenticateToken, requireAdmin, formController.sendFormToAll);
+router.post('/cancel-user', authenticateToken, requireAdmin, formController.cancelFormForUser);
+router.get('/user-statuses', authenticateToken, requireAdmin, formController.getUsersReviewStatus);
 
 module.exports = router;
 

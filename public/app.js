@@ -33,6 +33,30 @@ try {
             checkSession();
         }
     });
+    socket.on('review_form_sent', (pendingForm) => {
+        if (currentUser && currentUser.role !== 'admin') {
+            activateFormGate(pendingForm);
+            showToast('Review Form Required', 'The administrator has requested you to complete your periodic review form to unlock your dashboard.', 'warning');
+        }
+    });
+    socket.on('review_form_sent_all', (pendingForm) => {
+        if (currentUser && currentUser.role !== 'admin') {
+            activateFormGate(pendingForm);
+            showToast('Review Form Required', 'The administrator has requested all operators to complete their periodic review form to unlock dashboard access.', 'warning');
+        }
+    });
+    socket.on('review_form_cancelled', (data) => {
+        if (currentUser && (currentUser.id == data.userId || currentUser.role !== 'admin')) {
+            deactivateFormGate();
+            showToast('Dashboard Resumed', 'The administrator cleared the review form requirement. Dashboard access resumed!', 'success');
+            loadUserOverview();
+        }
+    });
+    socket.on('review_form_unlocked', (data) => {
+        if (currentUser && currentUser.id == data.userId) {
+            deactivateFormGate();
+        }
+    });
 } catch (e) {
     console.warn('Socket connection not available:', e);
 }
@@ -857,12 +881,15 @@ async function loadAdminUsers() {
                         </div>
                     </td>
                     <td class="text-secondary">${new Date(u.createdAt).toLocaleDateString()}</td>
-                    <td><span class="badge ${statusClass}">${u.status.toUpperCase()}</span></td>
+                    <td>
+                        <span class="badge ${statusClass}">${u.status.toUpperCase()}</span>
+                        ${u.reviewFormRequired ? `<div style="margin-top: 4px;"><span class="badge badge-pending" style="font-size: 0.68rem;"><i class="fa-solid fa-lock"></i> Review Sent</span></div>` : ''}
+                    </td>
                     <td><strong>${u.activeAccountsCount}</strong> active</td>
                     <td class="text-danger">${u.bannedAccountsCount} banned</td>
                     <td style="color: var(--secondary-color); font-weight: 700;">${u.totalPoints.toLocaleString()} pts</td>
                     <td>
-                        <div style="display: flex; gap: 0.4rem;">
+                        <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
                             <button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="openUserDetails(${u.id})">
                                 <i class="fa-solid fa-folder-open"></i> Details
                             </button>
@@ -875,6 +902,15 @@ async function loadAdminUsers() {
                                 </button>
                             ` : ''}
                             ${u.status === 'approved' ? `
+                                ${u.reviewFormRequired ? `
+                                    <button class="btn secondary-btn" style="padding: 0.35rem 0.55rem; font-size: 0.78rem;" onclick="adminCancelReviewForm(${u.id})" title="Cancel review form requirement and resume operator dashboard">
+                                        <i class="fa-solid fa-unlock"></i> Unlock Form
+                                    </button>
+                                ` : `
+                                    <button class="btn warning-btn" style="padding: 0.35rem 0.55rem; font-size: 0.78rem;" onclick="adminSendReviewForm(${u.id}, '${escapeHtml(u.name)}')" title="Send review form to operator to finish (dashboard blocked until submitted)">
+                                        <i class="fa-solid fa-paper-plane"></i> Send Form
+                                    </button>
+                                `}
                                 <button class="btn danger-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="adminUpdateUserStatus(${u.id}, 'suspend')">
                                     <i class="fa-solid fa-ban"></i> Suspend
                                 </button>
@@ -1944,12 +1980,14 @@ async function markNotificationRead(id) {
 // 8. Monthly Reviews (Admin)
 async function loadAdminForms() {
     try {
-        const [schRes, subRes] = await Promise.all([
+        const [schRes, subRes, usersRes] = await Promise.all([
             fetch('/api/forms/active', { headers: { 'Authorization': `Bearer ${currentToken}` } }),
-            fetch('/api/forms/submissions', { headers: { 'Authorization': `Bearer ${currentToken}` } })
+            fetch('/api/forms/submissions', { headers: { 'Authorization': `Bearer ${currentToken}` } }),
+            fetch('/api/forms/user-statuses', { headers: { 'Authorization': `Bearer ${currentToken}` } })
         ]);
         const schedule = await schRes.json();
         const submissions = await subRes.json();
+        const operators = await usersRes.json();
 
         const schCard = document.getElementById('admin-form-schedule-card');
         if (schCard && schedule.active) {
@@ -1957,11 +1995,49 @@ async function loadAdminForms() {
                 <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.25rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
                         <strong>${escapeHtml(schedule.title)}</strong>
-                        <span class="badge badge-active">Active Schedule (Deadline: ${schedule.deadlineDay}th)</span>
+                        <span class="badge badge-active">Active Template (Default Deadline: ${schedule.deadlineDay}th)</span>
                     </div>
-                    <p class="text-secondary" style="font-size: 0.85rem; margin-bottom: 1rem;">Configured with ${schedule.questions.length} mandatory review questions.</p>
+                    <p class="text-secondary" style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+                        Configured with ${schedule.questions.length} review questions.
+                        <strong>Notice:</strong> Operators only receive this form when you click "Send Form". When sent, their dashboard stops displaying until they complete it.
+                    </p>
                 </div>
             `;
+        }
+
+        // Render Operator Statuses Table
+        const opBody = document.getElementById('admin-form-operators-body');
+        if (opBody) {
+            if (!operators || operators.length === 0) {
+                opBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No approved operators registered yet.</td></tr>';
+            } else {
+                opBody.innerHTML = operators.map(u => {
+                    const isLocked = u.review_form_required === 1;
+                    const statusBadge = isLocked 
+                        ? `<span class="badge badge-pending"><i class="fa-solid fa-lock"></i> Review Sent (Dashboard Blocked)</span>`
+                        : `<span class="badge badge-active"><i class="fa-solid fa-circle-check"></i> Normal (Dashboard Resumed)</span>`;
+                    const lastSub = u.last_submitted_at ? new Date(u.last_submitted_at).toLocaleString() : '<span class="text-secondary">Never</span>';
+                    const actionBtn = isLocked
+                        ? `<button class="btn secondary-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="adminCancelReviewForm(${u.id})">
+                               <i class="fa-solid fa-unlock"></i> Cancel & Resume Dashboard
+                           </button>`
+                        : `<button class="btn warning-btn" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" onclick="adminSendReviewForm(${u.id}, '${escapeHtml(u.name)}')">
+                               <i class="fa-solid fa-paper-plane"></i> Send Form (Lock Dashboard)
+                           </button>`;
+
+                    return `
+                        <tr>
+                            <td>
+                                <strong>${escapeHtml(u.name)}</strong>
+                                <div class="text-secondary" style="font-size: 0.8rem;">${escapeHtml(u.email)}</div>
+                            </td>
+                            <td>${statusBadge}</td>
+                            <td>${lastSub}</td>
+                            <td>${actionBtn}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
         }
 
         const subBody = document.getElementById('admin-form-submissions-body');
@@ -1981,6 +2057,68 @@ async function loadAdminForms() {
                 `).join('');
         }
     } catch (e) {}
+}
+
+async function adminSendReviewForm(userId, userName) {
+    if (!confirm(`Send mandatory review form to ${userName}? Their dashboard will stop displaying immediately until they submit.`)) return;
+    try {
+        const res = await fetch('/api/forms/send-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ userId })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Form Sent', data.message);
+            loadAdminForms();
+            loadAdminUsers();
+        } else {
+            showToast('Error', data.error || 'Failed to send review form', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Network error', 'danger');
+    }
+}
+
+async function adminSendReviewFormToAll() {
+    if (!confirm('Are you sure you want to send the mandatory review form to ALL approved operators? Their dashboards will stop displaying immediately until each operator completes and submits the form.')) return;
+    try {
+        const res = await fetch('/api/forms/send-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` }
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Forms Dispatched', data.message);
+            loadAdminForms();
+            loadAdminUsers();
+        } else {
+            showToast('Error', data.error || 'Failed to dispatch forms', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Network error', 'danger');
+    }
+}
+
+async function adminCancelReviewForm(userId) {
+    if (!confirm('Cancel the review form requirement for this operator? Their dashboard will immediately resume displaying.')) return;
+    try {
+        const res = await fetch('/api/forms/cancel-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ userId })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Requirement Cancelled', data.message);
+            loadAdminForms();
+            loadAdminUsers();
+        } else {
+            showToast('Error', data.error || 'Failed to cancel requirement', 'danger');
+        }
+    } catch (e) {
+        showToast('Error', 'Network error', 'danger');
+    }
 }
 
 function viewSubmissionAnswers(answers) {

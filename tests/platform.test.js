@@ -401,7 +401,34 @@ async function runTests() {
 
     console.log('\n--- SUITE 6: MONTHLY REVIEW FORMS & GATING ---');
 
-    await test('Periodic Review Form submission unlocks user review state', async () => {
+    await test('Default: User dashboard is not blocked by review form (pendingForm is null)', async () => {
+        const meRes = await api('/api/auth/me', {
+            headers: { 'Authorization': `Bearer ${testUserToken}` }
+        });
+        assert.strictEqual(meRes.status, 200);
+        assert.strictEqual(meRes.body.pendingForm, null, 'User must not receive review form by default');
+        assert.strictEqual(meRes.body.user.review_form_required, 0);
+    });
+
+    await test('Administrator sends review form to user (locks user dashboard)', async () => {
+        const sendRes = await api('/api/forms/send-user', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${adminToken}` },
+            body: { userId: testUserId }
+        });
+        assert.strictEqual(sendRes.status, 200);
+        assert.strictEqual(sendRes.body.success, true);
+
+        // Verify user profile now receives pendingForm and dashboard is stopped/blocked
+        const meRes = await api('/api/auth/me', {
+            headers: { 'Authorization': `Bearer ${testUserToken}` }
+        });
+        assert.strictEqual(meRes.status, 200);
+        assert.notStrictEqual(meRes.body.pendingForm, null, 'User must now receive review form to fill');
+        assert.strictEqual(meRes.body.user.review_form_required, 1);
+    });
+
+    await test('Periodic Review Form submission unlocks user review state and resumes dashboard', async () => {
         const submitFormRes = await api('/api/forms/submit', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${testUserToken}` },
@@ -412,6 +439,39 @@ async function runTests() {
         });
         assert.strictEqual(submitFormRes.status, 200);
         assert.strictEqual(submitFormRes.body.success, true);
+
+        // Verify user profile is now unlocked and dashboard resumes
+        const meRes = await api('/api/auth/me', {
+            headers: { 'Authorization': `Bearer ${testUserToken}` }
+        });
+        assert.strictEqual(meRes.status, 200);
+        assert.strictEqual(meRes.body.pendingForm, null, 'Dashboard must resume displaying after submission');
+        assert.strictEqual(meRes.body.user.review_form_required, 0);
+    });
+
+    await test('Administrator can send to all operators and cancel review requirement', async () => {
+        // Send to all
+        const sendAllRes = await api('/api/forms/send-all', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        assert.strictEqual(sendAllRes.status, 200);
+        assert.strictEqual(sendAllRes.body.success, true);
+
+        // Cancel for test user
+        const cancelRes = await api('/api/forms/cancel-user', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${adminToken}` },
+            body: { userId: testUserId }
+        });
+        assert.strictEqual(cancelRes.status, 200);
+        assert.strictEqual(cancelRes.body.success, true);
+
+        // Verify dashboard resumed
+        const meRes = await api('/api/auth/me', {
+            headers: { 'Authorization': `Bearer ${testUserToken}` }
+        });
+        assert.strictEqual(meRes.body.pendingForm, null);
     });
 
     console.log('\n--- SUITE 7: DOWNLOAD CENTER & PDF REPORT GENERATION ---');

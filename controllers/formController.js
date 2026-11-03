@@ -55,6 +55,9 @@ const submitPeriodicForm = async (req, res) => {
             ]
         );
 
+        // Reset review_form_required on user profile so their dashboard unlocks and resumes
+        await run(`UPDATE app_users SET review_form_required = 0 WHERE id = ?`, [user.id]);
+
         // Audit Log
         await run(
             `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, record_id, result)
@@ -63,6 +66,7 @@ const submitPeriodicForm = async (req, res) => {
         );
 
         if (io) {
+            io.to(user.id.toString()).emit('review_form_unlocked', { userId: user.id });
             io.emit('new_form_submission', {
                 submissionId: insertRes.lastID,
                 user: { name: user.name, email: user.email }
@@ -159,12 +163,188 @@ const updateSchedule = async (req, res) => {
     }
 };
 
+// Admin: Send Review Form to a specific user (locks user's dashboard until submitted)
+const sendFormToUser = async (req, res) => {
+    const admin = req.user;
+    const { userId } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    try {
+        const targetUser = await get(`SELECT * FROM app_users WHERE id = ?`, [userId]);
+        if (!targetUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const activeSchedule = await get(`SELECT * FROM form_schedules WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1`);
+        if (!activeSchedule) {
+            return res.status(400).json({ error: 'No active review form schedule configured' });
+        }
+
+        // Set review_form_required = 1
+        await run(`UPDATE app_users SET review_form_required = 1 WHERE id = ?`, [userId]);
+
+        // Create notification for user
+        await run(
+            `INSERT INTO notifications (recipient_role, recipient_id, category, title, message)
+             VALUES ('user', ?, 'form_required', 'Mandatory Review Form Required', 'The administrator has requested you to complete your periodic review form to unlock your dashboard.')`,
+            [userId]
+        );
+
+        // Audit log
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, result)
+             VALUES (?, ?, 'admin', ?, 'Sent Periodic Review Form to User', 'success')`,
+            [admin.id, admin.email, userId]
+        );
+
+        const formPayload = {
+            scheduleId: activeSchedule.id,
+            title: activeSchedule.title,
+            type: activeSchedule.type,
+            deadlineDay: activeSchedule.deadline_day,
+            questions: JSON.parse(activeSchedule.questions || '[]')
+        };
+
+        if (io) {
+            io.to(userId.toString()).emit('review_form_sent', formPayload);
+            io.emit('user_review_status_changed', { userId, required: 1 });
+        }
+
+        res.json({
+            success: true,
+            message: `Review form sent to ${targetUser.name} (${targetUser.email}). Their dashboard is now locked until they complete and submit it.`
+        });
+    } catch (error) {
+        console.error('Send Form To User Error:', error);
+        res.status(500).json({ error: 'Error sending review form to user' });
+    }
+};
+
+// Admin: Send Review Form to all approved operators (locks their dashboards)
+const sendFormToAll = async (req, res) => {
+    const admin = req.user;
+
+    try {
+        const activeSchedule = await get(`SELECT * FROM form_schedules WHERE is_enabled = 1 ORDER BY id DESC LIMIT 1`);
+        if (!activeSchedule) {
+            return res.status(400).json({ error: 'No active review form schedule configured' });
+        }
+
+        const approvedUsers = await all(`SELECT id, email, name FROM app_users WHERE role = 'user' AND status = 'approved'`);
+        if (!approvedUsers || approvedUsers.length === 0) {
+            return res.status(400).json({ error: 'No active approved operators found' });
+        }
+
+        await run(`UPDATE app_users SET review_form_required = 1 WHERE role = 'user' AND status = 'approved'`);
+
+        for (const u of approvedUsers) {
+            await run(
+                `INSERT INTO notifications (recipient_role, recipient_id, category, title, message)
+                 VALUES ('user', ?, 'form_required', 'Mandatory Review Form Required', 'The administrator has requested you to complete your periodic review form to unlock your dashboard.')`,
+                [u.id]
+            );
+        }
+
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, action, result)
+             VALUES (?, ?, 'admin', 'Sent Periodic Review Form to All Approved Operators', 'success')`,
+            [admin.id, admin.email]
+        );
+
+        const formPayload = {
+            scheduleId: activeSchedule.id,
+            title: activeSchedule.title,
+            type: activeSchedule.type,
+            deadlineDay: activeSchedule.deadline_day,
+            questions: JSON.parse(activeSchedule.questions || '[]')
+        };
+
+        if (io) {
+            approvedUsers.forEach(u => {
+                io.to(u.id.toString()).emit('review_form_sent', formPayload);
+            });
+            io.emit('user_review_status_changed', { all: true, required: 1 });
+        }
+
+        res.json({
+            success: true,
+            message: `Review form sent to all ${approvedUsers.length} approved operators. Their dashboards are now locked until they submit.`
+        });
+    } catch (error) {
+        console.error('Send Form To All Error:', error);
+        res.status(500).json({ error: 'Error sending review form to all operators' });
+    }
+};
+
+// Admin: Cancel review form requirement for a user (unlocks their dashboard)
+const cancelFormForUser = async (req, res) => {
+    const admin = req.user;
+    const { userId } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    try {
+        const targetUser = await get(`SELECT * FROM app_users WHERE id = ?`, [userId]);
+        if (!targetUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        await run(`UPDATE app_users SET review_form_required = 0 WHERE id = ?`, [userId]);
+
+        await run(
+            `INSERT INTO audit_logs (actor_id, actor_email, actor_role, target_user_id, action, result)
+             VALUES (?, ?, 'admin', ?, 'Cancelled Periodic Review Form Requirement', 'success')`,
+            [admin.id, admin.email, userId]
+        );
+
+        if (io) {
+            io.to(userId.toString()).emit('review_form_cancelled', { userId });
+            io.emit('user_review_status_changed', { userId, required: 0 });
+        }
+
+        res.json({
+            success: true,
+            message: `Review form requirement cancelled for ${targetUser.name} (${targetUser.email}). Their dashboard access has resumed.`
+        });
+    } catch (error) {
+        console.error('Cancel Form For User Error:', error);
+        res.status(500).json({ error: 'Error cancelling review form requirement' });
+    }
+};
+
+// Admin: Get status of all users regarding review form requirement
+const getUsersReviewStatus = async (req, res) => {
+    try {
+        const query = `
+            SELECT u.id, u.name, u.email, u.picture, u.status, u.review_form_required,
+                   (SELECT MAX(submitted_at) FROM form_submissions WHERE user_id = u.id) as last_submitted_at
+            FROM app_users u
+            WHERE u.role = 'user' AND u.status = 'approved'
+            ORDER BY u.name ASC
+        `;
+        const users = await all(query);
+        res.json(users);
+    } catch (error) {
+        console.error('Get Users Review Status Error:', error);
+        res.status(500).json({ error: 'Error fetching users review status' });
+    }
+};
+
 module.exports = {
     setIo,
     getActiveForm,
     submitPeriodicForm,
     getFormSubmissions,
     acknowledgeSubmission,
-    updateSchedule
+    updateSchedule,
+    sendFormToUser,
+    sendFormToAll,
+    cancelFormForUser,
+    getUsersReviewStatus
 };
 

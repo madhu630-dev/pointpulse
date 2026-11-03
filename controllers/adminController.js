@@ -164,7 +164,8 @@ const listUsers = async (req, res) => {
                 accountsCount: userAccounts.length,
                 activeAccountsCount: activeCount,
                 bannedAccountsCount: bannedCount,
-                totalPoints: totalPts
+                totalPoints: totalPts,
+                reviewFormRequired: u.review_form_required ? 1 : 0
             };
         });
 
