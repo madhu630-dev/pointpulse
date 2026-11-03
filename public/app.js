@@ -2525,6 +2525,33 @@ function closeModal(modalId) {
     if (m) m.classList.add('hidden');
 }
 
+function openManualModal(tab = 'user') {
+    switchManualTab(tab);
+    openModal('modal-platform-manual');
+}
+
+function switchManualTab(tab) {
+    const tabs = ['user', 'admin', 'faq'];
+    tabs.forEach(t => {
+        const pane = document.getElementById(`manual-pane-${t}`);
+        const btn = document.getElementById(`btn-manual-tab-${t}`);
+        if (pane) {
+            if (t === tab) {
+                pane.classList.remove('hidden');
+            } else {
+                pane.classList.add('hidden');
+            }
+        }
+        if (btn) {
+            if (t === tab) {
+                btn.className = 'btn primary-btn';
+            } else {
+                btn.className = 'btn secondary-btn';
+            }
+        }
+    });
+}
+
 function openContactAdminModal() {
     openModal('modal-contact-admin');
 }
