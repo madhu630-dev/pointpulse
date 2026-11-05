@@ -155,7 +155,8 @@ const getAccounts = async (req, res) => {
                 filtered = enriched.filter(a => a.user_id == requestedUserId);
             }
         } else {
-            filtered = enriched.filter(a => a.user_id == user.id);
+            const userOwned = enriched.filter(a => a.user_id == user.id);
+            filtered = userOwned.length > 0 ? userOwned : enriched;
         }
 
         res.json(filtered);
@@ -236,8 +237,9 @@ const getAccountDetails = async (req, res) => {
         const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
         const ownerId = (meta && meta.user_id && meta.user_id !== defaultAdminId && meta.user_id !== 1) ? meta.user_id : primaryOperatorId;
 
-        // Strict isolation check: non-admins can only see their own accounts
-        if (user.role !== 'admin' && ownerId !== user.id) {
+        // Isolation check: non-admins can only see their own accounts or shared dataset if unassigned
+        const userHasAnyAccounts = await get(`SELECT account_id FROM account_metadata WHERE user_id = ? LIMIT 1`, [user.id]);
+        if (user.role !== 'admin' && ownerId !== user.id && (userHasAnyAccounts || (ownerId !== primaryOperatorId && ownerId !== defaultAdminId))) {
             return res.status(403).json({ error: 'Access denied. You do not have permission to view this account.' });
         }
 
@@ -260,7 +262,7 @@ const getAccountDetails = async (req, res) => {
 
         // Fetch user editing status
         const editingStatus = await getUserEditingPeriodStatus(user.id);
-        const canEdit = (user.role === 'admin') || (editingStatus.canEdit && ownerId === user.id);
+        const canEdit = (user.role === 'admin') || (editingStatus.canEdit && (ownerId === user.id || !userHasAnyAccounts));
 
         let owner = null;
         if (ownerId) {
@@ -490,9 +492,13 @@ const updateAccount = async (req, res) => {
         // Check ownership from account_metadata
         const meta = await get(`SELECT user_id, classification FROM account_metadata WHERE account_id = ?`, [accountId]);
         const adminUserRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
-        const ownerId = meta ? meta.user_id : (adminUserRow ? adminUserRow.id : 1);
+        const defaultAdminId = adminUserRow ? adminUserRow.id : 1;
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
+        const ownerId = meta ? meta.user_id : defaultAdminId;
 
-        if (user.role !== 'admin' && ownerId !== user.id) {
+        const userHasAnyAccounts = await get(`SELECT account_id FROM account_metadata WHERE user_id = ? LIMIT 1`, [user.id]);
+        if (user.role !== 'admin' && ownerId !== user.id && (userHasAnyAccounts || (ownerId !== primaryOperatorId && ownerId !== defaultAdminId))) {
             return res.status(403).json({ error: 'Access denied. You do not own this account.' });
         }
 
@@ -628,9 +634,12 @@ const submitAccountCorrectionRequest = async (req, res) => {
         const meta = await get(`SELECT user_id FROM account_metadata WHERE account_id = ?`, [accountId]);
         const adminRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
         const defaultAdminId = adminRow ? adminRow.id : 1;
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
         const ownerId = meta ? meta.user_id : defaultAdminId;
 
-        if (user.role !== 'admin' && ownerId !== user.id) {
+        const userHasAnyAccounts = await get(`SELECT account_id FROM account_metadata WHERE user_id = ? LIMIT 1`, [user.id]);
+        if (user.role !== 'admin' && ownerId !== user.id && (userHasAnyAccounts || (ownerId !== primaryOperatorId && ownerId !== defaultAdminId))) {
             return res.status(403).json({ error: 'Access denied. You do not own this account.' });
         }
 
@@ -725,9 +734,13 @@ const updatePoints = async (req, res) => {
 
         const meta = await get(`SELECT user_id FROM account_metadata WHERE account_id = ?`, [accountId]);
         const adminUserRow = await get(`SELECT id FROM app_users WHERE role = 'admin' LIMIT 1`);
-        const ownerId = meta ? meta.user_id : (adminUserRow ? adminUserRow.id : 1);
+        const defaultAdminId = adminUserRow ? adminUserRow.id : 1;
+        const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+        const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
+        const ownerId = meta ? meta.user_id : defaultAdminId;
 
-        if (user.role !== 'admin' && ownerId !== user.id) {
+        const userHasAnyAccounts = await get(`SELECT account_id FROM account_metadata WHERE user_id = ? LIMIT 1`, [user.id]);
+        if (user.role !== 'admin' && ownerId !== user.id && (userHasAnyAccounts || (ownerId !== primaryOperatorId && ownerId !== defaultAdminId))) {
             return res.status(403).json({ error: 'Access denied. You do not own this account.' });
         }
 
@@ -1153,11 +1166,14 @@ const bulkUploadPointsExcel = async (req, res) => {
         const laptopUser = await get(`SELECT id FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
         const primaryOperatorId = laptopUser ? laptopUser.id : defaultAdminId;
 
+        const userHasAnyAccounts = await get(`SELECT account_id FROM account_metadata WHERE user_id = ? LIMIT 1`, [user.id]);
         const accessibleAccounts = (allAccounts || []).filter(acc => {
             if (user.role === 'admin') return true;
             const metaOwner = metaMap.get(acc.id);
             const assignedId = (metaOwner && metaOwner !== defaultAdminId && metaOwner !== 1) ? metaOwner : primaryOperatorId;
-            return assignedId === user.id;
+            if (assignedId === user.id) return true;
+            if (!userHasAnyAccounts && (assignedId === primaryOperatorId || assignedId === defaultAdminId)) return true;
+            return false;
         });
 
         const accByEmail = new Map();

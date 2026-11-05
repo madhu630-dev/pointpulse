@@ -38,6 +38,12 @@ class MemoryQueryBuilder {
         this.filters.push(r => r[col] == val);
         return this;
     }
+    like(col, pattern) {
+        const regexStr = pattern.replace(/%/g, '.*');
+        const regex = new RegExp(`^${regexStr}$`, 'i');
+        this.filters.push(r => r[col] && regex.test(String(r[col])));
+        return this;
+    }
     in(col, vals) {
         this.filters.push(r => Array.isArray(vals) && vals.includes(r[col]));
         return this;
@@ -71,10 +77,9 @@ class MemoryQueryBuilder {
     upsert(records) {
         return this.insert(records);
     }
-    async update(updates) {
-        let matched = this.rows.filter(r => this.filters.every(f => f(r)));
-        matched.forEach(r => Object.assign(r, updates));
-        return { data: matched, error: null };
+    update(updates) {
+        this._updates = updates;
+        return this;
     }
     async delete() {
         const toDelete = new Set(this.rows.filter(r => this.filters.every(f => f(r))));
@@ -84,6 +89,11 @@ class MemoryQueryBuilder {
         return { data: null, error: null };
     }
     then(resolve, reject) {
+        if (this._updates) {
+            const matched = this.rows.filter(r => this.filters.every(f => f(r)));
+            matched.forEach(r => Object.assign(r, this._updates));
+            return resolve({ data: matched, error: null });
+        }
         let result = this._inserted ? this._inserted : this.rows.filter(r => this.filters.every(f => f(r)));
         for (const o of this.orders) {
             result.sort((a, b) => {

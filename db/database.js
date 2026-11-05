@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
 const supabase = require('./supabase');
 
 const dbPath = path.resolve(__dirname, '../database.sqlite');
@@ -470,49 +471,120 @@ async function initSchema() {
 
     console.log(`[PointPulse DB] Single Administrator verified: ${adminUser.email} (ID: ${adminUser.id})`);
 
-    // Provision & ensure user 'laptopmew1@gmail.com' exists, is approved, and owns the accounts dataset
-    const primaryOperatorEmail = 'laptopmew1@gmail.com';
-    let operatorUser = await get(`SELECT * FROM app_users WHERE lower(email) = ?`, [primaryOperatorEmail.toLowerCase()]);
-    if (!operatorUser) {
-        const res = await run(
-            `INSERT INTO app_users (google_id, email, name, display_name, role, status, terms_accepted, terms_accepted_at, approved_at)
-             VALUES (?, ?, ?, ?, 'user', 'approved', 1, datetime('now'), datetime('now'))`,
-            [`operator_${primaryOperatorEmail}`, primaryOperatorEmail, 'Madhu (Operator)', 'Madhu G']
-        );
-        operatorUser = await get(`SELECT * FROM app_users WHERE id = ?`, [res.lastID]);
-    } else if (operatorUser.status !== 'approved') {
-        await run(`UPDATE app_users SET status = 'approved', approved_at = datetime('now') WHERE id = ?`, [operatorUser.id]);
-        operatorUser.status = 'approved';
-    }
+    // 1. Restore any previously registered operators from persistent remote storage
+    await restoreUsersFromRemote();
 
-    // Provision operator permissions for laptopmew1@gmail.com (Strictly Read-Only by default)
+    // 2. Ensure all active operator users exist, are approved, and have valid password hashes
+    const defaultOperatorHash = await bcrypt.hash('madhu123', 10);
+    const seedOperators = [
+        { email: 'pulapallimahesh31@gmail.com', name: 'Mahesh Pulapalli (Operator)', displayName: 'Mahesh Pulapalli' },
+        { email: 'patantajuddin882@gmail.com', name: 'Tajuddin Patan (Operator)', displayName: 'Tajuddin Patan' },
+        { email: 'laptopmew1@gmail.com', name: 'Madhu (Operator)', displayName: 'Madhu G' },
+        { email: 'madhu999@gmail.com', name: 'Madhu 999 (Operator)', displayName: 'Madhu 999' },
+        { email: 'madhu99@gmail.com', name: 'Madhu 99 (Operator)', displayName: 'Madhu 99' },
+        { email: 'details1@gmail.com', name: 'Details Operator', displayName: 'Details 1' },
+        { email: 'madhugaddam092@gmail.com', name: 'Madhu Gaddam (Operator)', displayName: 'Madhu Gaddam' }
+    ];
+
     const operatorPerms = [
         'view_accounts', 'view_old_accounts', 'view_new_accounts', 'submit_requests', 'view_redemption'
     ];
-    for (const p of operatorPerms) {
-        await run(
-            `INSERT OR IGNORE INTO user_permissions (user_id, permission_key, granted_by) VALUES (?, ?, ?)`,
-            [operatorUser.id, p, adminUser.id]
-        );
-    }
-    // Remove write/edit permissions from operator by default unless within an active, unexpired admin temporary window
-    await run(
-        `DELETE FROM user_permissions 
-         WHERE user_id = ? AND permission_key IN ('update_points', 'edit_accounts', 'add_accounts', 'import_excel') 
-         AND (expires_at IS NULL OR expires_at <= datetime('now'))`,
-        [operatorUser.id]
-    );
+    const writePerms = [
+        'update_points', 'edit_accounts', 'add_accounts', 'import_excel'
+    ];
 
-    // Fetch all accounts from Supabase and ensure they are populated into account_metadata for laptopmew1@gmail.com
+    let primaryOperatorUser = null;
+
+    for (const op of seedOperators) {
+        let opUser = await get(`SELECT * FROM app_users WHERE lower(email) = ?`, [op.email.toLowerCase()]);
+        if (!opUser) {
+            const res = await run(
+                `INSERT INTO app_users (google_id, email, name, display_name, role, status, password_hash, terms_accepted, terms_accepted_at, approved_at)
+                 VALUES (?, ?, ?, ?, 'user', 'approved', ?, 1, datetime('now'), datetime('now'))`,
+                [`operator_${op.email}`, op.email.toLowerCase(), op.name, op.displayName, defaultOperatorHash]
+            );
+            opUser = await get(`SELECT * FROM app_users WHERE id = ?`, [res.lastID]);
+        } else {
+            if (opUser.status !== 'approved') {
+                await run(`UPDATE app_users SET status = 'approved', approved_at = datetime('now') WHERE id = ?`, [opUser.id]);
+                opUser.status = 'approved';
+            }
+            if (!opUser.password_hash) {
+                await run(`UPDATE app_users SET password_hash = ? WHERE id = ?`, [defaultOperatorHash, opUser.id]);
+            }
+        }
+
+        if (op.email.toLowerCase() === 'laptopmew1@gmail.com') {
+            primaryOperatorUser = opUser;
+        }
+
+        // Grant base read permissions
+        for (const p of operatorPerms) {
+            await run(
+                `INSERT OR IGNORE INTO user_permissions (user_id, permission_key, granted_by) VALUES (?, ?, ?)`,
+                [opUser.id, p, adminUser.id]
+            );
+        }
+
+        // For Mahesh Pulapalli and Tajuddin Patan: guarantee active write & Excel upload window
+        if (op.email.toLowerCase() === 'pulapallimahesh31@gmail.com' || op.email.toLowerCase() === 'patantajuddin882@gmail.com') {
+            const futureExp = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+            for (const wp of writePerms) {
+                await run(
+                    `INSERT INTO user_permissions (user_id, permission_key, granted_by, expires_at)
+                     VALUES (?, ?, ?, ?)
+                     ON CONFLICT(user_id, permission_key) DO UPDATE SET expires_at = excluded.expires_at`,
+                    [opUser.id, wp, adminUser.id, futureExp]
+                );
+            }
+            await run(
+                `INSERT INTO temporary_access_windows (user_id, start_time, end_time, permitted_actions, is_active, created_by)
+                 VALUES (?, datetime('now'), datetime('now', '+30 days'), '["update_points", "import_excel", "edit_accounts", "add_accounts"]', 1, ?)`,
+                [opUser.id, adminUser.id]
+            );
+        } else {
+            // Clean up expired temporary write permissions by default for other users
+            await run(
+                `DELETE FROM user_permissions 
+                 WHERE user_id = ? AND permission_key IN ('update_points', 'edit_accounts', 'add_accounts', 'import_excel') 
+                 AND (expires_at IS NULL OR expires_at <= datetime('now'))`,
+                [opUser.id]
+            );
+        }
+    }
+
+    const operatorUser = primaryOperatorUser || await get(`SELECT * FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
+
+    // Fetch all accounts from Supabase and ensure they are populated into account_metadata mapped to respective operators
     try {
-        const { data: accounts } = await supabase.from('Users').select('id, password, notes');
+        const { data: accounts } = await supabase.from('Users').select('id, password, notes, admin_id');
         if (accounts && accounts.length > 0) {
+            const userMahesh = await get(`SELECT id FROM app_users WHERE lower(email) = 'pulapallimahesh31@gmail.com'`);
+            const userTajuddin = await get(`SELECT id FROM app_users WHERE lower(email) = 'patantajuddin882@gmail.com'`);
+            const user99 = await get(`SELECT id FROM app_users WHERE lower(email) = 'madhu99@gmail.com'`);
+            const user999 = await get(`SELECT id FROM app_users WHERE lower(email) = 'madhu999@gmail.com'`);
+            const userDetails1 = await get(`SELECT id FROM app_users WHERE lower(email) = 'details1@gmail.com'`);
+            const defaultOperatorId = operatorUser ? operatorUser.id : 1;
+
             for (const acc of accounts) {
+                let targetUserId = defaultOperatorId;
+                
+                // Accounts 433-480 were entered/updated on Nov 3 by Mahesh Pulapalli
+                if (acc.id >= 433 && userMahesh) {
+                    targetUserId = userMahesh.id;
+                } else if (acc.admin_id === 1 && user99) {
+                    targetUserId = user99.id;
+                } else if (acc.admin_id === 2 && user999) {
+                    targetUserId = user999.id;
+                } else if (acc.admin_id === 4 && userDetails1) {
+                    targetUserId = userDetails1.id;
+                }
+
                 await run(
                     `INSERT INTO account_metadata (account_id, user_id, updated_at)
                      VALUES (?, ?, datetime('now'))
                      ON CONFLICT(account_id) DO UPDATE SET user_id = excluded.user_id, updated_at = datetime('now')`,
-                    [acc.id, operatorUser.id]
+                    [acc.id, targetUserId]
                 );
 
                 const creds = decodeCredentialsFromNotes(acc.notes);
@@ -530,14 +602,96 @@ async function initSchema() {
                     );
                 }
             }
+            console.log(`[PointPulse DB] Accounts successfully synced and assigned to respective operators (Mahesh Pulapalli, Tajuddin Patan, madhu99, madhu999, laptopmew1).`);
         }
     } catch (e) {
         console.warn('[PointPulse DB] Remote account sync warning during init:', e.message);
     }
 
-    // Move all accounts in account_metadata to laptopmew1@gmail.com
-    await run(`UPDATE account_metadata SET user_id = ?, updated_at = datetime('now')`, [operatorUser.id]);
-    console.log(`[PointPulse DB] All accounts successfully assigned to operator: ${operatorUser.email} (ID: ${operatorUser.id})`);
+    // Sync all operators to remote Supabase storage for durability
+    await syncUsersToRemote();
+}
+
+// Sync all non-admin app_users to remote Supabase storage for durability across ephemeral Render restarts
+async function syncUsersToRemote() {
+    try {
+        const users = await all(`SELECT * FROM app_users WHERE role = 'user'`);
+        if (!users || users.length === 0) return;
+
+        const syncPayload = JSON.stringify(users);
+        const marker = '__pointpulse_user_sync__:';
+
+        const { data: existing } = await supabase
+            .from('rewards')
+            .select('id')
+            .like('reward_name', marker + '%')
+            .limit(1);
+
+        if (existing && existing.length > 0) {
+            await supabase
+                .from('rewards')
+                .update({ reward_name: marker + syncPayload })
+                .eq('id', existing[0].id);
+        } else {
+            await supabase
+                .from('rewards')
+                .insert([{ reward_name: marker + syncPayload }]);
+        }
+        console.log(`[PointPulse DB] Synced ${users.length} operators to remote storage.`);
+    } catch (e) {
+        console.warn('[PointPulse DB] Remote user sync warning:', e.message);
+    }
+}
+
+// Restore app_users from remote Supabase storage
+async function restoreUsersFromRemote() {
+    try {
+        const marker = '__pointpulse_user_sync__:';
+        const { data } = await supabase
+            .from('rewards')
+            .select('reward_name')
+            .like('reward_name', marker + '%')
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (data && data.length > 0 && data[0].reward_name) {
+            const rawJson = data[0].reward_name.substring(marker.length);
+            const remoteUsers = JSON.parse(rawJson);
+            if (Array.isArray(remoteUsers)) {
+                for (const u of remoteUsers) {
+                    if (!u.email) continue;
+                    const existing = await get(`SELECT id FROM app_users WHERE lower(email) = ?`, [u.email.toLowerCase()]);
+                    if (!existing) {
+                        await run(
+                            `INSERT INTO app_users (google_id, email, name, picture, role, status, password_hash, display_name, phone, registration_purpose, account_management_description, terms_accepted, terms_accepted_at, approved_at, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            [
+                                u.google_id || `direct_${u.email.toLowerCase()}`,
+                                u.email.toLowerCase(),
+                                u.name || u.email.split('@')[0],
+                                u.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || u.email)}&background=6366f1&color=fff`,
+                                u.role || 'user',
+                                u.status || 'approved',
+                                u.password_hash || null,
+                                u.display_name || u.name,
+                                u.phone || null,
+                                u.registration_purpose || null,
+                                u.account_management_description || null,
+                                u.terms_accepted || 1,
+                                u.terms_accepted_at || new Date().toISOString(),
+                                u.approved_at || new Date().toISOString(),
+                                u.created_at || new Date().toISOString(),
+                                u.updated_at || new Date().toISOString()
+                            ]
+                        );
+                    }
+                }
+                console.log(`[PointPulse DB] Restored ${remoteUsers.length} operators from remote storage.`);
+            }
+        }
+    } catch (e) {
+        console.warn('[PointPulse DB] Remote user restore warning:', e.message);
+    }
 }
 
 // Check and establish initial schema
@@ -748,5 +902,7 @@ module.exports = {
     supabase,
     getUserEditingPeriodStatus,
     decodeCredentialsFromNotes,
-    encodeCredentialsToNotes
+    encodeCredentialsToNotes,
+    syncUsersToRemote,
+    restoreUsersFromRemote
 };

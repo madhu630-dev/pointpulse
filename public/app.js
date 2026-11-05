@@ -3833,7 +3833,7 @@ function openRequestPointsModal(accId, email) {
 function openPointsUpdateModal(accId, email, currentPts) {
     if (currentUser.role !== 'admin') {
         const canUpdate = (currentUser.permissions && currentUser.permissions.includes('update_points')) || 
-                          (window._userEditingStatus && window._userEditingStatus.canUpdatePoints);
+                          (window._userEditingStatus && (window._userEditingStatus.canUpdatePoints || window._userEditingStatus.isWithinWindow || window._userEditingStatus.isTemporaryWindow));
         if (!canUpdate) {
             if (confirm(`Points updating is currently locked in Read-Only mode.\n\nWould you like to request a temporary editing window from the Administrator now to update points for ${email}?`)) {
                 openRequestPointsModal(accId, email);

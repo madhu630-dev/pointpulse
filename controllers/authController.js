@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { OAuth2Client } = require('google-auth-library');
-const { get, run, all, ADMIN_EMAIL } = require('../db/database');
+const { get, run, all, ADMIN_EMAIL, syncUsersToRemote } = require('../db/database');
 const { JWT_SECRET } = require('../middleware/authMiddleware');
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
@@ -301,6 +301,9 @@ const submitRegistration = async (req, res) => {
              VALUES (?, ?, 'user', ?, 'User Registration Form Submitted', 'pending_approval', ?)`,
             [newUserId, email, newUserId, req.ip || '']
         );
+
+        // Sync to remote Supabase for durability
+        syncUsersToRemote().catch(() => {});
 
         const token = jwt.sign(
             { id: newUserId, email, role: 'user', status: 'pending' },
@@ -642,6 +645,9 @@ const register = async (req, res) => {
              VALUES (?, ?, 'user', ?, 'Direct User Registration Form Submitted', 'pending_approval', ?)`,
             [newUserId, cleanEmail, newUserId, req.ip || '']
         );
+
+        // Sync to remote Supabase for durability
+        syncUsersToRemote().catch(() => {});
 
         const token = jwt.sign(
             { id: newUserId, email: cleanEmail, role: 'user', status: 'pending' },

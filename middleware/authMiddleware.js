@@ -108,7 +108,9 @@ const requirePermission = (permissionKey) => {
             try {
                 const editStatus = await getUserEditingPeriodStatus(req.user.id);
                 if (editStatus.isTemporaryWindow || editStatus.isWithinWindow || editStatus.isFreePeriodActive) {
-                    if (permissionKey === 'import_excel' && (editStatus.canImportExcel || editStatus.canAdd || editStatus.canAddAccounts)) {
+                    if (editStatus.isTemporaryWindow || editStatus.isWithinWindow) {
+                        hasPerm = true;
+                    } else if (permissionKey === 'import_excel' && (editStatus.canImportExcel || editStatus.canAdd || editStatus.canAddAccounts)) {
                         hasPerm = true;
                     } else if (permissionKey === 'add_accounts' && (editStatus.canAdd || editStatus.canAddAccounts || editStatus.canImportExcel)) {
                         hasPerm = true;

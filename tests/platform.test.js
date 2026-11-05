@@ -98,8 +98,8 @@ async function runTests() {
         }
     }
 
-    // Clean up test non-admin users from previous test runs
-    await run(`DELETE FROM app_users WHERE email != ?`, [ADMIN_EMAIL]);
+    // Clean up only test-generated non-admin users from previous test runs (preserve actual operators)
+    await run(`DELETE FROM app_users WHERE email LIKE 'sarah.operator_%' OR email LIKE 'direct.operator_%' OR email = 'fakeadmin@gmail.com'`);
     await run(`DELETE FROM notifications`);
     await run(`DELETE FROM user_requests`);
     await run(`DELETE FROM form_submissions`);

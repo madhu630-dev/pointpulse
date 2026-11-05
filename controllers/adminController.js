@@ -1,4 +1,4 @@
-const { get, run, all, ADMIN_EMAIL, supabase } = require('../db/database');
+const { get, run, all, ADMIN_EMAIL, supabase, syncUsersToRemote } = require('../db/database');
 
 let io;
 const setIo = (socketIoInstance) => {
@@ -255,6 +255,9 @@ const updateUserStatus = async (req, res) => {
             io.emit('user_status_changed', { userId, status: newStatus });
         }
 
+        // Sync users to remote Supabase storage for durability
+        syncUsersToRemote().catch(() => {});
+
         res.json({ success: true, message: actionDesc, status: newStatus });
 
     } catch (error) {
@@ -285,6 +288,9 @@ const deleteUser = async (req, res) => {
              VALUES (?, ?, 'admin', ?, 'User Account Permanently Removed', ?, 'success')`,
             [req.user.id, req.user.email, userId, JSON.stringify(user)]
         );
+
+        // Sync users to remote Supabase storage for durability
+        syncUsersToRemote().catch(() => {});
 
         res.json({ success: true, message: 'User permanently removed' });
     } catch (error) {
