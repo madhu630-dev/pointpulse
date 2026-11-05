@@ -57,6 +57,27 @@ try {
             deactivateFormGate();
         }
     });
+    socket.on('redemption_batch_submitted', (data) => {
+        if (currentUser && currentUser.role === 'admin') {
+            showToast('Redemption Batch Submitted', `Operator ${data.userName} submitted ${data.count} account(s) for redemption.`, 'warning');
+            const badge = document.getElementById('badge-admin-redeem-reqs');
+            if (badge) {
+                badge.classList.remove('hidden');
+                badge.textContent = String(parseInt(badge.textContent || 0) + 1);
+            }
+            if (currentActiveView === 'admin' && document.getElementById('page-admin-redeem-requests') && !document.getElementById('page-admin-redeem-requests').classList.contains('hidden')) {
+                loadAdminRedeemRequests(data.userId);
+            }
+        }
+    });
+    socket.on('redemption_batch_unlocked', (data) => {
+        if (currentUser && currentUser.id == data.userId) {
+            showToast('Batch Unlocked', 'The administrator unlocked your redemption batch. You can now edit your allocation.', 'success');
+            if (currentActiveView === 'user' && document.getElementById('page-user-redeem-allocation') && !document.getElementById('page-user-redeem-allocation').classList.contains('hidden')) {
+                loadUserAllocationWorkspace();
+            }
+        }
+    });
 } catch (e) {
     console.warn('Socket connection not available:', e);
 }
@@ -748,6 +769,7 @@ function showAdminPage(pageId) {
         'admin-all-accounts': 'All Managed Accounts',
         'admin-classification': 'Old / New Classification Board',
         'admin-points-perms': 'Points Management & Permissions',
+        'admin-redeem-requests': 'Redeem Request Section',
         'admin-catalog': 'Master Reward Catalogue',
         'admin-matching': 'Reward Eligibility & Account Matching',
         'admin-notifications': 'Notification Center',
@@ -763,6 +785,7 @@ function showAdminPage(pageId) {
     if (pageId === 'admin-all-accounts') loadAllAccounts();
     if (pageId === 'admin-classification') loadClassificationBoard();
     if (pageId === 'admin-points-perms') loadAdminPointsPerms();
+    if (pageId === 'admin-redeem-requests') loadAdminRedeemRequests();
     if (pageId === 'admin-catalog') loadAdminRewardCatalog();
     if (pageId === 'admin-matching') loadMatchingData();
     if (pageId === 'admin-notifications') loadAdminNotifications();
@@ -3168,6 +3191,7 @@ function showUserPage(pageId) {
         'user-bulk-updations': 'Bulk Updations',
         'user-banned-accounts': 'My Banned Accounts',
         'user-classified-accounts': 'Old & New Accounts',
+        'user-redeem-allocation': 'Redeem Allocation Workspace',
         'user-rewards': 'Available Rewards & Eligibility',
         'user-requests': 'My Request Center',
         'user-downloads': 'Authorized Reports Download'
@@ -3185,6 +3209,7 @@ function showUserPage(pageId) {
     }
     if (pageId === 'user-banned-accounts') loadUserAccounts();
     if (pageId === 'user-classified-accounts') loadUserAccounts();
+    if (pageId === 'user-redeem-allocation') loadUserAllocationWorkspace();
     if (pageId === 'user-rewards') loadUserRewards();
     if (pageId === 'user-requests') loadUserRequests();
 }
@@ -3904,3 +3929,826 @@ const gsiCheckInterval = setInterval(() => {
     }
     if (gsiRetryCount > 25) clearInterval(gsiCheckInterval);
 }, 300);
+
+
+// ==============================================================================
+// REDEEM REQUESTS (ADMIN) & ALLOCATION WORKSPACE (USER) - IMAGES 1 & 2
+// ==============================================================================
+
+// Universal Clipboard Copy Helper
+async function copyToClipboard(text, label = 'Item') {
+    if (!text && text !== 0) {
+        showToast('Nothing to Copy', `${label} is empty.`, 'warning');
+        return;
+    }
+    const str = String(text).trim();
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(str);
+        } else {
+            const textArea = document.createElement('textarea');
+            textArea.value = str;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            textArea.remove();
+        }
+        showToast('Copied', `${label} copied to clipboard!`, 'success');
+    } catch (err) {
+        console.error('Clipboard copy error:', err);
+        showToast('Copy Failed', 'Please manually select and copy the text.', 'danger');
+    }
+}
+
+function escapeJs(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '');
+}
+
+// -----------------------------------------------------------------------------
+// ADMIN: REDEEM REQUEST SECTION (IMAGE 1)
+// -----------------------------------------------------------------------------
+let currentAdminRedeemUserId = null;
+let adminRedeemAccountsCache = [];
+let adminRedeemOperatorsCache = [];
+
+async function loadAdminRedeemRequests(userId = null) {
+    try {
+        const url = userId ? `/api/allocations/admin?userId=${encodeURIComponent(userId)}` : '/api/allocations/admin';
+        const res = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showToast('Error', err.error || 'Failed to load redeem requests', 'danger');
+            return;
+        }
+
+        const data = await res.json();
+        adminRedeemOperatorsCache = data.operators || [];
+        currentAdminRedeemUserId = data.selectedUserId;
+        adminRedeemAccountsCache = data.accounts || [];
+
+        renderAdminRedeemTabs(adminRedeemOperatorsCache, currentAdminRedeemUserId);
+        renderAdminRedeemGovernance(data.selectedUser, data.settings);
+        renderAdminRedeemTable(adminRedeemAccountsCache);
+
+    } catch (err) {
+        console.error('loadAdminRedeemRequests Error:', err);
+        showToast('Error', 'Unable to fetch redeem request section data.', 'danger');
+    }
+}
+
+function refreshAdminRedeemRequests() {
+    loadAdminRedeemRequests(currentAdminRedeemUserId);
+}
+
+function selectAdminRedeemOperator(userId) {
+    currentAdminRedeemUserId = userId;
+    loadAdminRedeemRequests(userId);
+}
+
+function renderAdminRedeemTabs(operators, selectedUserId) {
+    const tabsContainer = document.getElementById('admin-redeem-user-tabs');
+    if (!tabsContainer) return;
+
+    if (!operators || operators.length === 0) {
+        tabsContainer.innerHTML = '<div style="padding: 0.5rem 1rem; color: var(--text-muted); font-size: 0.85rem;">No registered operators found.</div>';
+        return;
+    }
+
+    tabsContainer.innerHTML = operators.map(op => {
+        const isActive = op.id === selectedUserId;
+        const displayName = op.display_name || op.name;
+        return `
+            <button type="button" class="redeem-user-tab-btn ${isActive ? 'active' : ''}" onclick="selectAdminRedeemOperator(${op.id})">
+                <i class="fa-solid fa-user-circle"></i>
+                <span>${escapeHtml(displayName)}</span>
+                <span class="tab-count-badge" title="Accounts submitted for redemption">${op.submittedCount || 0}</span>
+            </button>
+        `;
+    }).join('');
+}
+
+function renderAdminRedeemGovernance(operator, settings) {
+    if (!operator || !settings) return;
+
+    const opName = document.getElementById('admin-redeem-op-name');
+    const opEmail = document.getElementById('admin-redeem-op-email');
+    const opAvatar = document.getElementById('admin-redeem-op-avatar');
+    const lockBadge = document.getElementById('admin-redeem-batch-lock-badge');
+    const quotaInput = document.getElementById('admin-redeem-quota-input');
+    const openToggle = document.getElementById('admin-redeem-open-toggle');
+    const formToggle = document.getElementById('admin-redeem-form-toggle');
+    const unlockBtn = document.getElementById('btn-admin-redeem-unlock');
+
+    const name = operator.display_name || operator.name;
+    if (opName) opName.textContent = name;
+    if (opEmail) opEmail.textContent = operator.email;
+    if (opAvatar) {
+        const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'OP';
+        opAvatar.textContent = initials;
+    }
+
+    if (quotaInput) quotaInput.value = settings.maxAccounts || 10;
+    if (openToggle) openToggle.checked = settings.isOpen !== false;
+    if (formToggle) formToggle.checked = !!settings.isFormRequired;
+
+    if (lockBadge) {
+        if (settings.isLocked) {
+            lockBadge.className = 'badge badge-pending';
+            lockBadge.innerHTML = '<i class="fa-solid fa-lock"></i> Batch Locked';
+        } else {
+            lockBadge.className = 'badge badge-active';
+            lockBadge.innerHTML = '<i class="fa-solid fa-lock-open"></i> Unlocked / Editing Allowed';
+        }
+    }
+
+    if (unlockBtn) {
+        unlockBtn.style.display = settings.isLocked ? 'inline-flex' : 'none';
+    }
+}
+
+async function saveAdminRedeemSettings() {
+    if (!currentAdminRedeemUserId) return;
+    const maxAccounts = parseInt(document.getElementById('admin-redeem-quota-input').value) || 10;
+    const isOpen = document.getElementById('admin-redeem-open-toggle').checked;
+    const isFormRequired = document.getElementById('admin-redeem-form-toggle').checked;
+
+    try {
+        const res = await fetch(`/api/allocations/admin/settings/${currentAdminRedeemUserId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ maxAccounts, isOpen, isFormRequired })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Settings Saved', data.message || 'Operator allocation limit saved.');
+            loadAdminRedeemRequests(currentAdminRedeemUserId);
+        } else {
+            showToast('Save Failed', data.error || 'Unable to update settings.', 'danger');
+        }
+    } catch (err) {
+        showToast('Error', 'Failed to communicate with server.', 'danger');
+    }
+}
+
+async function adminUnlockOperatorBatch() {
+    if (!currentAdminRedeemUserId) return;
+    if (!confirm('Unlock this operator\'s allocation batch so they can add, remove, or modify accounts again?')) return;
+
+    try {
+        const res = await fetch(`/api/allocations/admin/unlock/${currentAdminRedeemUserId}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Batch Unlocked', data.message || 'Operator can now edit accounts.', 'success');
+            loadAdminRedeemRequests(currentAdminRedeemUserId);
+        } else {
+            showToast('Error', data.error || 'Failed to unlock batch.', 'danger');
+        }
+    } catch (err) {
+        showToast('Error', 'Request failed.', 'danger');
+    }
+}
+
+function renderAdminRedeemTable(accounts) {
+    const tbody = document.getElementById('admin-redeem-table-body');
+    const badge = document.getElementById('admin-redeem-count-badge');
+    if (!tbody) return;
+
+    if (badge) badge.textContent = `${accounts.length} Account${accounts.length === 1 ? '' : 's'}`;
+
+    if (!accounts || accounts.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 3rem 1rem;">
+                    <i class="fa-solid fa-inbox" style="font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.4; display: block;"></i>
+                    No accounts currently submitted for redemption by this operator.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = accounts.map(acc => {
+        const isRedeemed = acc.redemptionStatus === 'redeemed';
+        const isBanned = (acc.accountStatus || '').toLowerCase() === 'banned';
+        const isNew = (acc.classification || '').toLowerCase() === 'new';
+
+        const emailPw = acc.emailPassword || '';
+        const altPw = acc.alternativePassword || '';
+        const altEmail = acc.alternativeEmail || '';
+
+        return `
+            <tr>
+                <!-- 1. Profile No. -->
+                <td>
+                    <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; font-weight: 700;">#${acc.profileNo}</span>
+                </td>
+
+                <!-- 2. Email / Outlook -->
+                <td>
+                    <div style="display: flex; align-items: center; gap: 0.35rem;">
+                        <span style="font-weight: 600; color: var(--text-primary); font-size: 0.85rem;">${escapeHtml(acc.email)}</span>
+                        <button class="mini-copy-btn" onclick="copyToClipboard('${escapeJs(acc.email)}', 'Email')" title="Copy Email">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                </td>
+
+                <!-- 3. Email / Outlook Password -->
+                <td>
+                    <div style="display: flex; align-items: center; gap: 0.35rem;">
+                        <span style="font-family: monospace; font-size: 0.82rem; color: #cbd5e1;">${escapeHtml(emailPw || '—')}</span>
+                        ${emailPw ? `
+                            <button class="mini-copy-btn" onclick="copyToClipboard('${escapeJs(emailPw)}', 'Email Password')" title="Copy Password">
+                                <i class="fa-regular fa-copy"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                </td>
+
+                <!-- 4. Server -->
+                <td>
+                    <span class="badge" style="background: rgba(34, 211, 238, 0.12); color: #22d3ee; font-size: 0.75rem;">${escapeHtml(acc.server || 'US-Standard')}</span>
+                </td>
+
+                <!-- 5. New / Old Account -->
+                <td>
+                    <span class="badge ${isNew ? 'badge-new' : 'badge-old'}" style="font-weight: 700; font-size: 0.72rem;">
+                        ${isNew ? 'NEW' : 'OLD'}
+                    </span>
+                </td>
+
+                <!-- 6. Alternative Email -->
+                <td>
+                    <div style="display: flex; align-items: center; gap: 0.35rem;">
+                        <span style="font-size: 0.82rem; color: var(--text-secondary);">${escapeHtml(altEmail || '—')}</span>
+                        ${altEmail ? `
+                            <button class="mini-copy-btn" onclick="copyToClipboard('${escapeJs(altEmail)}', 'Alternative Email')" title="Copy Alt Email">
+                                <i class="fa-regular fa-copy"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                </td>
+
+                <!-- 7. Alternative Email Password -->
+                <td>
+                    <div style="display: flex; align-items: center; gap: 0.35rem;">
+                        <span style="font-family: monospace; font-size: 0.82rem; color: #cbd5e1;">${escapeHtml(altPw || '—')}</span>
+                        ${altPw ? `
+                            <button class="mini-copy-btn" onclick="copyToClipboard('${escapeJs(altPw)}', 'Alternative Password')" title="Copy Alt Password">
+                                <i class="fa-regular fa-copy"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                </td>
+
+                <!-- 8. Current Points -->
+                <td>
+                    <span class="badge badge-active" style="font-weight: 700; font-size: 0.82rem;">
+                        ${Number(acc.currentPoints || 0).toLocaleString()} Pts
+                    </span>
+                </td>
+
+                <!-- 9. Redeemed / Not Redeemed (1-Click Toggle) -->
+                <td>
+                    ${isRedeemed ? `
+                        <button class="btn success-btn" style="padding: 0.3rem 0.65rem; font-size: 0.75rem;" onclick="adminToggleRedemptionStatus(${acc.allocationId})" title="Click to mark Not Redeemed">
+                            <i class="fa-solid fa-circle-check"></i> Redeemed
+                        </button>
+                    ` : `
+                        <button class="btn warning-btn" style="padding: 0.3rem 0.65rem; font-size: 0.75rem;" onclick="adminToggleRedemptionStatus(${acc.allocationId})" title="Click to mark Redeemed">
+                            <i class="fa-solid fa-hourglass-half"></i> Not Redeemed
+                        </button>
+                    `}
+                </td>
+
+                <!-- 10. Success / Banned -->
+                <td>
+                    ${isBanned ? `
+                        <span class="badge badge-banned"><i class="fa-solid fa-ban"></i> Banned</span>
+                    ` : `
+                        <span class="badge badge-active"><i class="fa-solid fa-circle-check"></i> Active</span>
+                    `}
+                </td>
+
+                <!-- 11. WHATSAPP Direct Sender per Image 1 -->
+                <td style="text-align: center;">
+                    <button class="btn whatsapp-btn" onclick="openWhatsAppModal(${acc.id})" title="Send credentials via WhatsApp">
+                        <i class="fa-brands fa-whatsapp"></i> WhatsApp
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function adminToggleRedemptionStatus(allocationId) {
+    if (!allocationId) return;
+    try {
+        const res = await fetch(`/api/allocations/admin/toggle/${allocationId}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Updated', data.message || 'Redemption status updated.');
+            loadAdminRedeemRequests(currentAdminRedeemUserId);
+        } else {
+            showToast('Error', data.error || 'Failed to toggle status.', 'danger');
+        }
+    } catch (err) {
+        showToast('Error', 'Update failed.', 'danger');
+    }
+}
+
+function filterAdminRedeemTable() {
+    const q = (document.getElementById('admin-redeem-search')?.value || '').toLowerCase().trim();
+    if (!q) {
+        renderAdminRedeemTable(adminRedeemAccountsCache);
+        return;
+    }
+    const filtered = adminRedeemAccountsCache.filter(a => 
+        String(a.profileNo).toLowerCase().includes(q) ||
+        String(a.email).toLowerCase().includes(q) ||
+        String(a.alternativeEmail || '').toLowerCase().includes(q) ||
+        String(a.server || '').toLowerCase().includes(q)
+    );
+    renderAdminRedeemTable(filtered);
+}
+
+// -----------------------------------------------------------------------------
+// WHATSAPP DISPATCH MODAL & SEPARATE FIELD COPYING (IMAGE 1)
+// -----------------------------------------------------------------------------
+let currentWhatsAppAccount = null;
+
+function openWhatsAppModal(accountId) {
+    const acc = adminRedeemAccountsCache.find(a => a.id === accountId);
+    if (!acc) {
+        showToast('Error', 'Account details not found in cache.', 'danger');
+        return;
+    }
+
+    currentWhatsAppAccount = acc;
+
+    // Summary Header
+    const profEl = document.getElementById('wa-summary-profile');
+    const emailEl = document.getElementById('wa-summary-email');
+    const ptsEl = document.getElementById('wa-summary-points');
+    if (profEl) profEl.textContent = `#${acc.profileNo}`;
+    if (emailEl) emailEl.textContent = acc.email;
+    if (ptsEl) ptsEl.textContent = `${Number(acc.currentPoints || 0).toLocaleString()} Pts`;
+
+    // Separate values
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val || '—';
+    };
+
+    setVal('wa-copy-val-email', acc.email);
+    setVal('wa-copy-val-email-pw', acc.emailPassword || '—');
+    setVal('wa-copy-val-type', (acc.classification || 'new').toUpperCase());
+    setVal('wa-copy-val-server', acc.server || 'US-Standard');
+    setVal('wa-copy-val-alt-email', acc.alternativeEmail || '—');
+    setVal('wa-copy-val-alt-pw', acc.alternativePassword || '—');
+
+    // Restore destination phone number from localStorage
+    const savedPhone = localStorage.getItem('pp_last_whatsapp_phone') || '';
+    const phoneInput = document.getElementById('wa-dest-phone');
+    if (phoneInput) phoneInput.value = savedPhone;
+
+    updateWhatsAppPreview();
+    openModal('modal-whatsapp-sender');
+}
+
+function updateWhatsAppPreview() {
+    if (!currentWhatsAppAccount) return;
+    const acc = currentWhatsAppAccount;
+    const previewEl = document.getElementById('wa-message-preview');
+    if (!previewEl) return;
+
+    const payload = 
+`PointPulse Redemption Details
+Profile No: #${acc.profileNo}
+Email / Outlook: ${acc.email}
+Email / Outlook Password: ${acc.emailPassword || 'N/A'}
+Server: ${acc.server || 'US-Standard'}
+New / Old Account: ${(acc.classification || 'new').toUpperCase()}
+Alternative Email: ${acc.alternativeEmail || 'N/A'}
+Alternative Email Password: ${acc.alternativePassword || 'N/A'}
+Current Points: ${Number(acc.currentPoints || 0).toLocaleString()} Pts`;
+
+    previewEl.value = payload;
+}
+
+function copyWhatsAppField(fieldKey) {
+    if (!currentWhatsAppAccount) return;
+    const acc = currentWhatsAppAccount;
+
+    if (fieldKey === 'email') copyToClipboard(acc.email, 'Email / Outlook');
+    else if (fieldKey === 'emailPassword') copyToClipboard(acc.emailPassword, 'Email Password');
+    else if (fieldKey === 'type') copyToClipboard((acc.classification || 'new').toUpperCase(), 'New / Old Classification');
+    else if (fieldKey === 'server') copyToClipboard(acc.server || 'US-Standard', 'Server');
+    else if (fieldKey === 'altEmail') copyToClipboard(acc.alternativeEmail, 'Alternative Email');
+    else if (fieldKey === 'altPassword') copyToClipboard(acc.alternativePassword, 'Alternative Password');
+    else if (fieldKey === 'fullMessage') {
+        const txt = document.getElementById('wa-message-preview')?.value || '';
+        copyToClipboard(txt, 'Full WhatsApp Message');
+    }
+}
+
+function triggerWhatsAppRedirect() {
+    if (!currentWhatsAppAccount) return;
+    const phoneInput = document.getElementById('wa-dest-phone');
+    let phone = phoneInput ? phoneInput.value.trim() : '';
+
+    if (!phone) {
+        showToast('Phone Number Required', 'Please enter a recipient phone number for WhatsApp.', 'warning');
+        if (phoneInput) phoneInput.focus();
+        return;
+    }
+
+    // Clean phone number (strip whitespace, hyphens, parentheses, plus)
+    phone = phone.replace(/[^0-9]/g, '');
+    if (!phone) {
+        showToast('Invalid Number', 'Please enter a valid numeric phone number with country code.', 'danger');
+        return;
+    }
+
+    localStorage.setItem('pp_last_whatsapp_phone', phone);
+
+    const messageText = document.getElementById('wa-message-preview')?.value || '';
+    const encodedText = encodeURIComponent(messageText);
+    const waUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${encodedText}`;
+
+    window.open(waUrl, '_blank');
+}
+
+// -----------------------------------------------------------------------------
+// USER: REDEEM ALLOCATION WORKSPACE & DRAG-AND-DROP (IMAGE 2)
+// -----------------------------------------------------------------------------
+let userAllocAvailableAccounts = [];
+let userAllocDroppedAccounts = [];
+let userAllocSettings = { maxAccounts: 10, isOpen: true, isLocked: false };
+let draggedAccountId = null;
+
+async function loadUserAllocationWorkspace() {
+    try {
+        const res = await fetch('/api/allocations/user', {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            showToast('Error', err.error || 'Failed to load allocation workspace', 'danger');
+            return;
+        }
+
+        const data = await res.json();
+        userAllocSettings = data.settings || { maxAccounts: 10, isOpen: true, isLocked: false };
+        userAllocAvailableAccounts = data.availableAccounts || [];
+        userAllocDroppedAccounts = data.allocatedAccounts || [];
+
+        renderUserAllocUI();
+
+    } catch (err) {
+        console.error('loadUserAllocationWorkspace Error:', err);
+        showToast('Error', 'Unable to fetch redemption allocation workspace.', 'danger');
+    }
+}
+
+function renderUserAllocUI() {
+    // 1. Quota Counters
+    const curCount = userAllocDroppedAccounts.length;
+    const maxLimit = userAllocSettings.maxAccounts || 10;
+
+    const curCountEl = document.getElementById('user-alloc-current-count');
+    const maxLimitEl = document.getElementById('user-alloc-max-limit');
+    const droppedPill = document.getElementById('alloc-dropped-count-pill');
+    const availPill = document.getElementById('alloc-available-count-pill');
+
+    if (curCountEl) curCountEl.textContent = curCount;
+    if (maxLimitEl) maxLimitEl.textContent = maxLimit;
+    if (droppedPill) {
+        droppedPill.textContent = `${curCount} / ${maxLimit}`;
+        droppedPill.className = curCount >= maxLimit ? 'badge badge-banned' : 'badge badge-pending';
+    }
+    if (availPill) availPill.textContent = userAllocAvailableAccounts.length;
+
+    // 2. Lock & Status Banner
+    const banner = document.getElementById('user-alloc-status-banner');
+    const submitBtn = document.getElementById('btn-submit-allocation');
+
+    if (userAllocSettings.isLocked) {
+        if (banner) {
+            banner.className = '';
+            banner.style.display = 'flex';
+            banner.style.background = 'rgba(245, 158, 11, 0.12)';
+            banner.style.border = '1px solid rgba(245, 158, 11, 0.35)';
+            banner.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.75rem; color: #fbbf24;">
+                    <i class="fa-solid fa-lock" style="font-size: 1.35rem;"></i>
+                    <div>
+                        <strong style="font-size: 0.95rem;">Allocation Batch Locked & Submitted</strong>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                            Your ${curCount} account(s) are undergoing administrator review. Accounts cannot be added or removed while locked.
+                        </div>
+                    </div>
+                </div>
+                <button class="btn secondary-btn" onclick="openUnlockRequestFromAllocation()" style="font-size: 0.8rem; padding: 0.4rem 0.85rem;">
+                    <i class="fa-solid fa-paper-plane"></i> Request Unlock in Request Center
+                </button>
+            `;
+        }
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.className = 'btn secondary-btn';
+            submitBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Batch Locked & Submitted';
+        }
+    } else if (!userAllocSettings.isOpen) {
+        if (banner) {
+            banner.className = '';
+            banner.style.display = 'flex';
+            banner.style.background = 'rgba(239, 68, 68, 0.12)';
+            banner.style.border = '1px solid rgba(239, 68, 68, 0.35)';
+            banner.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.75rem; color: #ef4444;">
+                    <i class="fa-solid fa-circle-exclamation" style="font-size: 1.35rem;"></i>
+                    <div>
+                        <strong style="font-size: 0.95rem;">Redemption Window Closed</strong>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                            The administrator has temporarily closed redemption allocations. Submissions cannot be made at this time.
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fa-solid fa-ban"></i> Submissions Closed';
+        }
+    } else {
+        if (banner) {
+            banner.className = 'hidden';
+            banner.style.display = 'none';
+        }
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.className = 'btn primary-btn';
+            submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit Allocation for Redemption';
+        }
+    }
+
+    renderAllocAvailableList();
+    renderAllocDroppedList();
+}
+
+function renderAllocAvailableList() {
+    const list = document.getElementById('alloc-available-list');
+    if (!list) return;
+
+    const q = (document.getElementById('alloc-available-search')?.value || '').toLowerCase().trim();
+    let accounts = userAllocAvailableAccounts;
+
+    if (q) {
+        accounts = accounts.filter(a => 
+            String(a.profileNo).toLowerCase().includes(q) ||
+            String(a.email).toLowerCase().includes(q) ||
+            String(a.server || '').toLowerCase().includes(q)
+        );
+    }
+
+    if (accounts.length === 0) {
+        list.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 3rem 1rem;">
+                <i class="fa-solid fa-boxes-stacked" style="font-size: 1.8rem; margin-bottom: 0.5rem; opacity: 0.4; display: block;"></i>
+                ${q ? 'No accounts match your search filter.' : 'All assigned accounts have been allocated.'}
+            </div>
+        `;
+        return;
+    }
+
+    const isLocked = !!userAllocSettings.isLocked;
+
+    list.innerHTML = accounts.map(acc => {
+        const isNew = (acc.classification || '').toLowerCase() === 'new';
+        return `
+            <div class="alloc-account-card" draggable="${!isLocked}" ondragstart="handleAllocDragStart(event, ${acc.id})" id="alloc-card-${acc.id}">
+                <div class="alloc-card-left">
+                    <i class="fa-solid fa-grip-vertical alloc-drag-handle" title="Drag to right box"></i>
+                    <div class="alloc-account-info">
+                        <div class="alloc-account-email" title="${escapeHtml(acc.email)}">
+                            <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; font-size: 0.72rem; padding: 0.1rem 0.35rem; margin-right: 0.35rem;">#${acc.profileNo}</span>
+                            ${escapeHtml(acc.email)}
+                        </div>
+                        <div class="alloc-account-meta">
+                            <span><i class="fa-solid fa-server"></i> ${escapeHtml(acc.server || 'US-Standard')}</span>
+                            <span>&bull;</span>
+                            <span class="badge ${isNew ? 'badge-new' : 'badge-old'}" style="font-size: 0.68rem; padding: 0.05rem 0.3rem;">${isNew ? 'NEW' : 'OLD'}</span>
+                            <span>&bull;</span>
+                            <strong style="color: var(--success-color);">${Number(acc.points || 0).toLocaleString()} pts</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="alloc-card-actions">
+                    ${!isLocked ? `
+                        <button type="button" class="alloc-action-btn alloc-add-btn" onclick="addAccountToAllocation(${acc.id})" title="Add to allocation box">
+                            <i class="fa-solid fa-plus"></i> Add
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderAllocDroppedList() {
+    const placeholder = document.getElementById('alloc-drop-placeholder');
+    const droppedList = document.getElementById('alloc-dropped-list');
+    if (!droppedList || !placeholder) return;
+
+    if (userAllocDroppedAccounts.length === 0) {
+        placeholder.style.display = 'block';
+        droppedList.style.display = 'none';
+        droppedList.innerHTML = '';
+        return;
+    }
+
+    placeholder.style.display = 'none';
+    droppedList.style.display = 'flex';
+
+    const isLocked = !!userAllocSettings.isLocked;
+
+    droppedList.innerHTML = userAllocDroppedAccounts.map(acc => {
+        const isNew = (acc.classification || '').toLowerCase() === 'new';
+        return `
+            <div class="alloc-account-card" draggable="${!isLocked}" ondragstart="handleAllocDragStart(event, ${acc.id})" style="border-left: 3px solid var(--primary-color);">
+                <div class="alloc-card-left">
+                    <i class="fa-solid fa-grip-vertical alloc-drag-handle" title="Draggable"></i>
+                    <div class="alloc-account-info">
+                        <div class="alloc-account-email" title="${escapeHtml(acc.email)}">
+                            <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; font-size: 0.72rem; padding: 0.1rem 0.35rem; margin-right: 0.35rem;">#${acc.profileNo}</span>
+                            ${escapeHtml(acc.email)}
+                        </div>
+                        <div class="alloc-account-meta">
+                            <span><i class="fa-solid fa-server"></i> ${escapeHtml(acc.server || 'US-Standard')}</span>
+                            <span>&bull;</span>
+                            <span class="badge ${isNew ? 'badge-new' : 'badge-old'}" style="font-size: 0.68rem; padding: 0.05rem 0.3rem;">${isNew ? 'NEW' : 'OLD'}</span>
+                            <span>&bull;</span>
+                            <strong style="color: var(--success-color);">${Number(acc.points || 0).toLocaleString()} pts</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="alloc-card-actions">
+                    ${!isLocked ? `
+                        <button type="button" class="alloc-action-btn alloc-remove-btn" onclick="removeAccountFromAllocation(${acc.id})" title="Remove from allocation">
+                            <i class="fa-solid fa-xmark"></i> Remove
+                        </button>
+                    ` : `
+                        <span class="badge badge-pending" style="font-size: 0.72rem;"><i class="fa-solid fa-lock"></i> Locked</span>
+                    `}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Drag & Drop Handlers per HTML5 Drag and Drop API
+function handleAllocDragStart(event, accountId) {
+    if (userAllocSettings.isLocked) {
+        event.preventDefault();
+        return;
+    }
+    draggedAccountId = accountId;
+    event.dataTransfer.setData('text/plain', String(accountId));
+    event.dataTransfer.effectAllowed = 'move';
+    if (event.target) event.target.classList.add('dragging');
+}
+
+function handleAllocDragOver(event) {
+    if (userAllocSettings.isLocked) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const zone = document.getElementById('alloc-drop-zone');
+    if (zone) zone.classList.add('drag-over');
+}
+
+function handleAllocDragLeave(event) {
+    const zone = document.getElementById('alloc-drop-zone');
+    if (zone) zone.classList.remove('drag-over');
+}
+
+function handleAllocDrop(event) {
+    if (userAllocSettings.isLocked) return;
+    event.preventDefault();
+    const zone = document.getElementById('alloc-drop-zone');
+    if (zone) zone.classList.remove('drag-over');
+
+    const cardId = draggedAccountId || parseInt(event.dataTransfer.getData('text/plain'));
+    draggedAccountId = null;
+
+    if (cardId) {
+        addAccountToAllocation(cardId);
+    }
+}
+
+function filterAvailableAccounts() {
+    renderAllocAvailableList();
+}
+
+function addAccountToAllocation(accountId) {
+    if (userAllocSettings.isLocked) {
+        showToast('Batch Locked', 'Your allocation batch is submitted and locked. Request unlock in Request Center.', 'warning');
+        return;
+    }
+
+    const maxLimit = userAllocSettings.maxAccounts || 10;
+    if (userAllocDroppedAccounts.length >= maxLimit) {
+        showToast('Limit Reached', `Admin allows a maximum of ${maxLimit} account(s) for this redemption allocation.`, 'danger');
+        return;
+    }
+
+    const idx = userAllocAvailableAccounts.findIndex(a => a.id === accountId);
+    if (idx === -1) return;
+
+    const [acc] = userAllocAvailableAccounts.splice(idx, 1);
+    userAllocDroppedAccounts.push(acc);
+
+    renderUserAllocUI();
+    showToast('Account Added', `Profile #${acc.profileNo} allocated for redemption.`, 'success');
+}
+
+function removeAccountFromAllocation(accountId) {
+    if (userAllocSettings.isLocked) {
+        showToast('Batch Locked', 'Your allocation batch is locked.', 'warning');
+        return;
+    }
+
+    const idx = userAllocDroppedAccounts.findIndex(a => a.id === accountId);
+    if (idx === -1) return;
+
+    const [acc] = userAllocDroppedAccounts.splice(idx, 1);
+    userAllocAvailableAccounts.push(acc);
+
+    renderUserAllocUI();
+    showToast('Removed', `Profile #${acc.profileNo} returned to available pool.`, 'info');
+}
+
+async function submitAllocationBatch() {
+    if (userAllocSettings.isLocked) {
+        showToast('Already Locked', 'This batch has already been submitted.', 'warning');
+        return;
+    }
+
+    if (userAllocDroppedAccounts.length === 0) {
+        showToast('No Accounts Selected', 'Please drag or add at least one account to the allocation box.', 'warning');
+        return;
+    }
+
+    const count = userAllocDroppedAccounts.length;
+    const confirmMsg = `Are you sure you want to submit ${count} account(s) for administrator redemption?\n\nIMPORTANT: Once submitted, this batch will be LOCKED and cannot be edited without administrator permission.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        const accountIds = userAllocDroppedAccounts.map(a => a.id);
+        const res = await fetch('/api/allocations/user/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentToken}` },
+            body: JSON.stringify({ accountIds })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Batch Submitted & Locked', data.message || 'Accounts successfully submitted to administrator!', 'success');
+            loadUserAllocationWorkspace();
+        } else {
+            showToast('Submission Failed', data.error || 'Failed to submit allocation batch.', 'danger');
+        }
+    } catch (err) {
+        console.error('submitAllocationBatch Error:', err);
+        showToast('Error', 'Network communication error during submission.', 'danger');
+    }
+}
+
+function openUnlockRequestFromAllocation() {
+    showUserPage('user-requests');
+    const reqSub = document.getElementById('req-subject');
+    const reqCat = document.getElementById('req-category');
+    const reqDesc = document.getElementById('req-description');
+
+    if (reqCat) reqCat.value = 'Permissions';
+    if (reqSub) reqSub.value = 'Request Unlock for Redemption Allocation Batch';
+    if (reqDesc) reqDesc.value = 'Please unlock my redemption allocation batch so I can make adjustments to the submitted accounts.';
+    openModal('modal-request');
+}

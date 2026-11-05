@@ -16,6 +16,7 @@ const rewardRoutes = require('./routes/rewards');
 const requestRoutes = require('./routes/requests');
 const formRoutes = require('./routes/forms');
 const downloadRoutes = require('./routes/downloads');
+const allocationRoutes = require('./routes/allocations');
 
 // Import controllers for socket.io injection
 const adminController = require('./controllers/adminController');
@@ -23,6 +24,7 @@ const accountController = require('./controllers/accountController');
 const rewardController = require('./controllers/rewardController');
 const requestController = require('./controllers/requestController');
 const formController = require('./controllers/formController');
+const allocationController = require('./controllers/allocationController');
 
 const app = express();
 const server = http.createServer(app);
@@ -52,6 +54,7 @@ accountController.setIo(io);
 rewardController.setIo(io);
 requestController.setIo(io);
 formController.setIo(io);
+allocationController.setIo(io);
 
 // Mount API routes
 app.use('/api/auth', authRoutes);
@@ -61,6 +64,7 @@ app.use('/api/rewards', rewardRoutes);
 app.use('/api/requests', requestRoutes);
 app.use('/api/forms', formRoutes);
 app.use('/api/downloads', downloadRoutes);
+app.use('/api/allocations', allocationRoutes);
 
 // Catch-all fallback for single-page application
 app.use((req, res, next) => {

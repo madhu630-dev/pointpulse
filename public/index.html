@@ -310,6 +310,10 @@
 
                 <div class="sidebar-nav-group">
                     <div class="sidebar-group-title">Rewards & Eligibility</div>
+                    <button class="sidebar-nav-btn" data-page="admin-redeem-requests">
+                        <i class="fa-solid fa-hand-holding-dollar"></i> <span>Redeem Requests</span>
+                        <span id="badge-admin-redeem-reqs" class="nav-badge hidden">0</span>
+                    </button>
                     <button class="sidebar-nav-btn" data-page="admin-catalog">
                         <i class="fa-solid fa-gift"></i> <span>Reward Catalogue</span>
                     </button>
@@ -359,6 +363,10 @@
 
                 <div class="sidebar-nav-group">
                     <div class="sidebar-group-title">Rewards & Requests</div>
+                    <button class="sidebar-nav-btn" data-page="user-redeem-allocation">
+                        <i class="fa-solid fa-hand-holding-dollar"></i> <span>Redeem Allocation</span>
+                        <span id="badge-user-alloc-limit" class="nav-badge hidden">0</span>
+                    </button>
                     <button class="sidebar-nav-btn" data-page="user-rewards">
                         <i class="fa-solid fa-gift"></i> <span>Available Rewards</span>
                     </button>
@@ -705,6 +713,122 @@
                         </div>
                         <div id="admin-access-requests-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
                             <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: REDEEM REQUESTS (ADMIN) -->
+                <div id="page-admin-redeem-requests" class="page-pane hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                <span style="display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; background: rgba(99, 102, 241, 0.15); color: var(--primary-color);">
+                                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                                </span>
+                                <h3 style="font-size: 1.35rem; font-weight: 700; margin: 0;">Redeem Request Section</h3>
+                            </div>
+                            <p class="text-secondary" style="font-size: 0.88rem; margin-top: 0.35rem;">
+                                Select an operator tab below to view submitted accounts, copy credentials, update redemption status, and send via WhatsApp.
+                            </p>
+                        </div>
+                        <div style="display: flex; gap: 0.75rem; align-items: center;">
+                            <button class="btn secondary-btn" onclick="refreshAdminRedeemRequests()" style="font-size: 0.82rem; padding: 0.45rem 0.85rem;">
+                                <i class="fa-solid fa-rotate"></i> Refresh Data
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Operator Selection Tabs Bar (Horizontal operator tabs per Image 1) -->
+                    <div class="redeem-user-tabs-wrapper">
+                        <div class="redeem-user-tabs-bar" id="admin-redeem-user-tabs">
+                            <!-- Populated dynamically with operator tabs -->
+                        </div>
+                    </div>
+
+                    <!-- Operator Allocation Quota & Governance Card -->
+                    <div class="table-card" style="padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 0.85rem;">
+                                <div id="admin-redeem-op-avatar" style="width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #22d3ee); display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 1.1rem;">
+                                    OP
+                                </div>
+                                <div>
+                                    <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                        <h4 id="admin-redeem-op-name" style="font-size: 1.05rem; font-weight: 700; margin: 0;">Operator Name</h4>
+                                        <span id="admin-redeem-batch-lock-badge" class="badge badge-active">Unlocked</span>
+                                    </div>
+                                    <div id="admin-redeem-op-email" class="text-secondary" style="font-size: 0.82rem;">operator@pointpulse.com</div>
+                                </div>
+                            </div>
+
+                            <!-- Quota Controls Form -->
+                            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <label style="font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Max Drop Limit:</label>
+                                    <input type="number" id="admin-redeem-quota-input" min="1" max="100" class="form-input" style="width: 75px; padding: 0.35rem 0.6rem; font-size: 0.88rem; text-align: center;" value="10">
+                                </div>
+
+                                <label style="display: flex; align-items: center; gap: 0.45rem; cursor: pointer; font-size: 0.82rem; color: var(--text-secondary);">
+                                    <input type="checkbox" id="admin-redeem-open-toggle" checked style="width: 16px; height: 16px; accent-color: var(--primary-color);">
+                                    <span>Accepting Submissions</span>
+                                </label>
+
+                                <label style="display: flex; align-items: center; gap: 0.45rem; cursor: pointer; font-size: 0.82rem; color: var(--text-secondary);" title="Mandatory review form required to unlock dashboard">
+                                    <input type="checkbox" id="admin-redeem-form-toggle" style="width: 16px; height: 16px; accent-color: var(--warning-color);">
+                                    <span>Enforce Review Gate</span>
+                                </label>
+
+                                <button class="btn primary-btn" onclick="saveAdminRedeemSettings()" style="font-size: 0.8rem; padding: 0.45rem 0.85rem;">
+                                    <i class="fa-solid fa-floppy-disk"></i> Save Limit
+                                </button>
+
+                                <button id="btn-admin-redeem-unlock" class="btn warning-btn" onclick="adminUnlockOperatorBatch()" style="font-size: 0.8rem; padding: 0.45rem 0.85rem; display: none;">
+                                    <i class="fa-solid fa-lock-open"></i> Unlock Batch
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 11-Column Table Container per Image 1 -->
+                    <div class="table-card">
+                        <div class="table-header-bar">
+                            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                <h4 style="font-size: 1rem; font-weight: 700; margin: 0;">
+                                    <i class="fa-solid fa-list-ol"></i> Submitted Accounts for Redemption
+                                </h4>
+                                <span id="admin-redeem-count-badge" class="badge badge-active" style="font-size: 0.75rem;">0 Accounts</span>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <input type="text" id="admin-redeem-search" placeholder="Search profile / email..." class="table-search" oninput="filterAdminRedeemTable()" style="width: 220px;">
+                            </div>
+                        </div>
+
+                        <div class="table-responsive" style="overflow-x: auto;">
+                            <table class="data-table" id="admin-redeem-table">
+                                <thead>
+                                    <tr>
+                                        <th>Profile No.</th>
+                                        <th>Email / Outlook</th>
+                                        <th>Email / Outlook Password</th>
+                                        <th>Server</th>
+                                        <th>New/Old Account</th>
+                                        <th>Alternative Email</th>
+                                        <th>Alternative Email Password</th>
+                                        <th>Current Points</th>
+                                        <th>Redeemed / Not Redeemed</th>
+                                        <th>Success / Banned</th>
+                                        <th style="text-align: center;">WHATSAPP</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="admin-redeem-table-body">
+                                    <tr>
+                                        <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 2.5rem;">
+                                            <i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem; margin-bottom: 0.5rem; display: block;"></i>
+                                            Loading submitted redemption accounts...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -1075,6 +1199,111 @@
                                 </thead>
                                 <tbody id="user-classified-accounts-body"></tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: USER REDEEM ALLOCATION (DRAG & DROP) -->
+                <div id="page-user-redeem-allocation" class="page-pane hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                <span style="display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; background: rgba(99, 102, 241, 0.15); color: var(--primary-color);">
+                                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                                </span>
+                                <h3 style="font-size: 1.35rem; font-weight: 700; margin: 0;">Redeem Allocation Workspace</h3>
+                            </div>
+                            <p class="text-secondary" style="font-size: 0.88rem; margin-top: 0.35rem;">
+                                Drag accounts from your portfolio into the redemption box up to the limit set by the administrator.
+                            </p>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <div id="user-alloc-limit-badge" class="badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); font-size: 0.88rem; padding: 0.45rem 0.85rem; border-radius: 8px;">
+                                <i class="fa-solid fa-gauge-high"></i> Drop Limit: <strong id="user-alloc-current-count">0</strong> / <strong id="user-alloc-max-limit">10</strong>
+                            </div>
+                            <button class="btn secondary-btn" onclick="loadUserAllocationWorkspace()" style="font-size: 0.82rem; padding: 0.45rem 0.85rem;">
+                                <i class="fa-solid fa-rotate"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Batch Locked / Gate Alert Banner -->
+                    <div id="user-alloc-status-banner" class="hidden" style="margin-bottom: 1.5rem; padding: 1rem 1.25rem; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+                        <!-- Injected dynamically -->
+                    </div>
+
+                    <!-- 2-COLUMN SIDE-BY-SIDE DRAG AND DROP WORKSPACE per Image 2 -->
+                    <div class="alloc-drag-drop-grid">
+                        <!-- LEFT PANEL: AVAILABLE ACCOUNTS -->
+                        <div class="alloc-panel">
+                            <div class="alloc-panel-header">
+                                <div>
+                                    <h4 style="font-size: 1rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                        <i class="fa-solid fa-layer-group" style="color: var(--primary-color);"></i>
+                                        Available Accounts
+                                    </h4>
+                                    <div class="text-secondary" style="font-size: 0.78rem; margin-top: 2px;">
+                                        Drag card to right box or click <span style="color: var(--primary-color); font-weight: 600;">+ Add</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span id="alloc-available-count-pill" class="badge badge-active" style="font-size: 0.75rem;">0</span>
+                                </div>
+                            </div>
+
+                            <div style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); background: rgba(15, 23, 42, 0.3);">
+                                <input type="text" id="alloc-available-search" class="form-input" placeholder="Filter by profile # or email..." oninput="filterAvailableAccounts()" style="font-size: 0.82rem; padding: 0.4rem 0.75rem;">
+                            </div>
+
+                            <div class="alloc-card-list" id="alloc-available-list">
+                                <!-- Rendered dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- RIGHT PANEL: ALLOCATED FOR REDEMPTION (DROP ZONE) -->
+                        <div class="alloc-panel alloc-panel-drop">
+                            <div class="alloc-panel-header">
+                                <div>
+                                    <h4 style="font-size: 1rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                        <i class="fa-solid fa-basket-shopping" style="color: var(--success-color);"></i>
+                                        Allocated for Redemption
+                                    </h4>
+                                    <div class="text-secondary" style="font-size: 0.78rem; margin-top: 2px;">
+                                        Drop area &bull; Administrator max limit enforced
+                                    </div>
+                                </div>
+                                <span id="alloc-dropped-count-pill" class="badge badge-pending" style="font-size: 0.75rem;">0 / 10</span>
+                            </div>
+
+                            <!-- Drop Zone Area -->
+                            <div class="alloc-drop-zone-area" id="alloc-drop-zone" ondragover="handleAllocDragOver(event)" ondragleave="handleAllocDragLeave(event)" ondrop="handleAllocDrop(event)">
+                                <div id="alloc-drop-placeholder" class="alloc-drop-placeholder">
+                                    <i class="fa-solid fa-cloud-arrow-down" style="font-size: 2.2rem; margin-bottom: 0.6rem; color: var(--text-muted);"></i>
+                                    <div style="font-weight: 600; font-size: 0.95rem; color: var(--text-primary); margin-bottom: 0.25rem;">
+                                        Drop Accounts Here
+                                    </div>
+                                    <div class="text-secondary" style="font-size: 0.8rem; max-width: 260px; line-height: 1.4;">
+                                        Drag accounts from left panel or click <span style="color: var(--primary-color);">+ Add</span> to allocate for redemption.
+                                    </div>
+                                </div>
+                                <div id="alloc-dropped-list" class="alloc-card-list" style="padding: 0; display: none; width: 100%;">
+                                    <!-- Populated dynamically with dropped accounts -->
+                                </div>
+                            </div>
+
+                            <!-- Submit Bar -->
+                            <div class="alloc-panel-footer">
+                                <div style="display: flex; flex-direction: column; gap: 0.75rem; width: 100%;">
+                                    <div style="font-size: 0.78rem; color: var(--text-muted); display: flex; align-items: flex-start; gap: 0.4rem; line-height: 1.4;">
+                                        <i class="fa-solid fa-shield-halved" style="margin-top: 2px; color: var(--warning-color);"></i>
+                                        <span>Once submitted, this batch is <strong>locked</strong>. If you need changes later, you must request an unlock in the Request Center.</span>
+                                    </div>
+                                    <button id="btn-submit-allocation" class="btn primary-btn" onclick="submitAllocationBatch()" style="width: 100%; padding: 0.75rem 1rem; font-size: 0.95rem;">
+                                        <i class="fa-solid fa-paper-plane"></i> Submit Allocation for Redemption
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1773,6 +2002,144 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Modal: WhatsApp Redemption Sender with Separate Copy Buttons per Image 1 -->
+    <div id="modal-whatsapp-sender" class="modal-overlay hidden">
+        <div class="modal-box" style="max-width: 580px;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 38px; height: 38px; border-radius: 8px; background: rgba(37, 211, 102, 0.15); display: flex; align-items: center; justify-content: center; color: #25d366; font-size: 1.25rem;">
+                        <i class="fa-brands fa-whatsapp"></i>
+                    </div>
+                    <div>
+                        <h4 style="font-size: 1.15rem; font-weight: 700; margin: 0;">WhatsApp Redemption Sender</h4>
+                        <div style="font-size: 0.78rem; color: var(--text-secondary);">Direct dispatch & 1-click individual credential copying</div>
+                    </div>
+                </div>
+                <button class="icon-btn" onclick="closeModal('modal-whatsapp-sender')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 1.25rem; max-height: 75vh; overflow-y: auto;">
+                <!-- Account Summary Chip -->
+                <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span id="wa-summary-profile" class="badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; font-weight: 700; margin-right: 0.5rem;">#0</span>
+                        <strong id="wa-summary-email" style="font-size: 0.92rem; color: var(--text-primary);">user@outlook.com</strong>
+                    </div>
+                    <span id="wa-summary-points" class="badge badge-active" style="font-size: 0.82rem;">0 Pts</span>
+                </div>
+
+                <!-- 1-Click Separate Copy Actions Grid per Diagram 1 Notes -->
+                <div>
+                    <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 0.6rem;">
+                        <i class="fa-solid fa-copy"></i> 1-Click Separate Field Copying
+                    </label>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.65rem;">
+                        <!-- Email / Outlook -->
+                        <div class="wa-copy-item">
+                            <div class="wa-copy-info">
+                                <span class="wa-copy-label">Email / Outlook:</span>
+                                <span class="wa-copy-value" id="wa-copy-val-email">-</span>
+                            </div>
+                            <button type="button" class="btn secondary-btn wa-copy-btn" onclick="copyWhatsAppField('email')">
+                                <i class="fa-regular fa-copy"></i> Copy
+                            </button>
+                        </div>
+
+                        <!-- Email Password -->
+                        <div class="wa-copy-item">
+                            <div class="wa-copy-info">
+                                <span class="wa-copy-label">Email Password:</span>
+                                <span class="wa-copy-value" id="wa-copy-val-email-pw">-</span>
+                            </div>
+                            <button type="button" class="btn secondary-btn wa-copy-btn" onclick="copyWhatsAppField('emailPassword')">
+                                <i class="fa-regular fa-copy"></i> Copy
+                            </button>
+                        </div>
+
+                        <!-- Classification (New/Old) -->
+                        <div class="wa-copy-item">
+                            <div class="wa-copy-info">
+                                <span class="wa-copy-label">New / Old Account:</span>
+                                <span class="wa-copy-value" id="wa-copy-val-type">-</span>
+                            </div>
+                            <button type="button" class="btn secondary-btn wa-copy-btn" onclick="copyWhatsAppField('type')">
+                                <i class="fa-regular fa-copy"></i> Copy
+                            </button>
+                        </div>
+
+                        <!-- Server -->
+                        <div class="wa-copy-item">
+                            <div class="wa-copy-info">
+                                <span class="wa-copy-label">Server:</span>
+                                <span class="wa-copy-value" id="wa-copy-val-server">-</span>
+                            </div>
+                            <button type="button" class="btn secondary-btn wa-copy-btn" onclick="copyWhatsAppField('server')">
+                                <i class="fa-regular fa-copy"></i> Copy
+                            </button>
+                        </div>
+
+                        <!-- Alternative Email -->
+                        <div class="wa-copy-item">
+                            <div class="wa-copy-info">
+                                <span class="wa-copy-label">Alternative Email:</span>
+                                <span class="wa-copy-value" id="wa-copy-val-alt-email">-</span>
+                            </div>
+                            <button type="button" class="btn secondary-btn wa-copy-btn" onclick="copyWhatsAppField('altEmail')">
+                                <i class="fa-regular fa-copy"></i> Copy
+                            </button>
+                        </div>
+
+                        <!-- Alternative Password -->
+                        <div class="wa-copy-item">
+                            <div class="wa-copy-info">
+                                <span class="wa-copy-label">Alternative Password:</span>
+                                <span class="wa-copy-value" id="wa-copy-val-alt-pw">-</span>
+                            </div>
+                            <button type="button" class="btn secondary-btn wa-copy-btn" onclick="copyWhatsAppField('altPassword')">
+                                <i class="fa-regular fa-copy"></i> Copy
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Destination Phone Number -->
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label style="font-size: 0.84rem; font-weight: 600;">Recipient WhatsApp Phone Number *</label>
+                    <div style="position: relative;">
+                        <input type="text" id="wa-dest-phone" class="form-input" placeholder="e.g. +91 9876543210 or 9876543210" oninput="updateWhatsAppPreview()" style="padding-left: 2.25rem;">
+                        <i class="fa-brands fa-whatsapp" style="position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); color: #25d366; font-size: 1.1rem;"></i>
+                    </div>
+                    <div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.25rem;">
+                        Enter destination WhatsApp number (e.g. 919876543210 or +15551234567). Number is remembered automatically.
+                    </div>
+                </div>
+
+                <!-- Message Preview Area -->
+                <div class="form-group" style="margin-bottom: 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                        <label style="font-size: 0.84rem; font-weight: 600;">Message Preview / Formatted Payload</label>
+                        <button type="button" class="btn secondary-btn" onclick="copyWhatsAppField('fullMessage')" style="font-size: 0.74rem; padding: 0.25rem 0.55rem;">
+                            <i class="fa-regular fa-copy"></i> Copy Full Text
+                        </button>
+                    </div>
+                    <textarea id="wa-message-preview" rows="7" class="form-input" style="font-family: monospace; font-size: 0.82rem; line-height: 1.45; background: #070d18;"></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <button type="button" class="btn secondary-btn" onclick="closeModal('modal-whatsapp-sender')">Close</button>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="button" class="btn secondary-btn" onclick="copyWhatsAppField('fullMessage')">
+                        <i class="fa-solid fa-copy"></i> Copy Text
+                    </button>
+                    <button type="button" class="btn" onclick="triggerWhatsAppRedirect()" style="background: #25d366; color: #fff; font-weight: 700; border: none; box-shadow: 0 4px 14px rgba(37, 211, 102, 0.4);">
+                        <i class="fa-brands fa-whatsapp"></i> Open in WhatsApp
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 

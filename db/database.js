@@ -241,6 +241,39 @@ async function initSchema() {
             email_password TEXT,
             proton_password TEXT,
             alternative_password TEXT,
+            alternative_email TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    `);
+
+    try {
+        await run(`ALTER TABLE account_credentials ADD COLUMN alternative_email TEXT`);
+    } catch (e) {}
+
+    // Dedicated Redemption Allocations Table (Operator Drag & Drop Allocations)
+    await run(`
+        CREATE TABLE IF NOT EXISTS user_redemption_allocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'submitted',
+            is_locked INTEGER DEFAULT 1,
+            submitted_at TEXT DEFAULT (datetime('now')),
+            redeemed_at TEXT,
+            redeemed_by INTEGER,
+            notes TEXT,
+            UNIQUE(user_id, account_id)
+        )
+    `);
+
+    // User Allocation Settings & Drop Quotas configured by Admin
+    await run(`
+        CREATE TABLE IF NOT EXISTS user_allocation_settings (
+            user_id INTEGER PRIMARY KEY,
+            max_accounts INTEGER DEFAULT 10,
+            is_open INTEGER DEFAULT 1,
+            deadline TEXT,
+            is_form_required INTEGER DEFAULT 0,
             updated_at TEXT DEFAULT (datetime('now'))
         )
     `);
