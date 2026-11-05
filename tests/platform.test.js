@@ -667,6 +667,9 @@ async function runTests() {
         assert.strictEqual(getRes.body.duration_unit, 'days');
     });
 
+    // Clean up test-generated mock users so only actual operators remain in database
+    await run(`DELETE FROM app_users WHERE email LIKE 'sarah.operator_%' OR email LIKE 'direct.operator_%' OR email = 'fakeadmin@gmail.com'`);
+
     console.log('\n======================================================');
     console.log(`🏁 FINAL TEST RESULTS: ${passedCount} PASSED, ${failedCount} FAILED`);
     console.log('======================================================\n');

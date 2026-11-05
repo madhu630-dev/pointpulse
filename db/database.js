@@ -477,13 +477,12 @@ async function initSchema() {
     // 2. Ensure all active operator users exist, are approved, and have valid password hashes
     const defaultOperatorHash = await bcrypt.hash('madhu123', 10);
     const seedOperators = [
-        { email: 'pulapallimahesh31@gmail.com', name: 'Mahesh Pulapalli (Operator)', displayName: 'Mahesh Pulapalli' },
         { email: 'patantajuddin882@gmail.com', name: 'Tajuddin Patan (Operator)', displayName: 'Tajuddin Patan' },
-        { email: 'laptopmew1@gmail.com', name: 'Madhu (Operator)', displayName: 'Madhu G' },
+        { email: 'pulapallimahesh31@gmail.com', name: 'Mahesh Pulapalli (Operator)', displayName: 'Mahesh Pulapalli' },
+        { email: 'madhugaddam092@gmail.com', name: 'Madhu Gaddam (Operator)', displayName: 'Madhu Gaddam' },
         { email: 'madhu999@gmail.com', name: 'Madhu 999 (Operator)', displayName: 'Madhu 999' },
-        { email: 'madhu99@gmail.com', name: 'Madhu 99 (Operator)', displayName: 'Madhu 99' },
-        { email: 'details1@gmail.com', name: 'Details Operator', displayName: 'Details 1' },
-        { email: 'madhugaddam092@gmail.com', name: 'Madhu Gaddam (Operator)', displayName: 'Madhu Gaddam' }
+        { email: 'laptopmew1@gmail.com', name: 'Madhu (Operator)', displayName: 'Madhu G' },
+        { email: 'madhu99@gmail.com', name: 'Madhu 99 (Operator)', displayName: 'Madhu 99' }
     ];
 
     const operatorPerms = [
@@ -553,6 +552,16 @@ async function initSchema() {
         }
     }
 
+    // Strictly prune any non-allowed users so ONLY the approved operators and sole admin exist
+    if (process.env.NODE_ENV !== 'test') {
+        const allowedList = [
+            ADMIN_EMAIL.toLowerCase(),
+            ...seedOperators.map(o => o.email.toLowerCase())
+        ];
+        const placeholders = allowedList.map(() => '?').join(', ');
+        await run(`DELETE FROM app_users WHERE lower(email) NOT IN (${placeholders})`, allowedList);
+    }
+
     const operatorUser = primaryOperatorUser || await get(`SELECT * FROM app_users WHERE lower(email) = 'laptopmew1@gmail.com'`);
 
     // Fetch all accounts from Supabase and ensure they are populated into account_metadata mapped to respective operators
@@ -563,7 +572,6 @@ async function initSchema() {
             const userTajuddin = await get(`SELECT id FROM app_users WHERE lower(email) = 'patantajuddin882@gmail.com'`);
             const user99 = await get(`SELECT id FROM app_users WHERE lower(email) = 'madhu99@gmail.com'`);
             const user999 = await get(`SELECT id FROM app_users WHERE lower(email) = 'madhu999@gmail.com'`);
-            const userDetails1 = await get(`SELECT id FROM app_users WHERE lower(email) = 'details1@gmail.com'`);
             const defaultOperatorId = operatorUser ? operatorUser.id : 1;
 
             for (const acc of accounts) {
@@ -576,8 +584,6 @@ async function initSchema() {
                     targetUserId = user99.id;
                 } else if (acc.admin_id === 2 && user999) {
                     targetUserId = user999.id;
-                } else if (acc.admin_id === 4 && userDetails1) {
-                    targetUserId = userDetails1.id;
                 }
 
                 await run(
